@@ -166,12 +166,10 @@
 <div class="container">
 
   <div class="config-bar">
-    <input id="supaUrl" type="text" placeholder="Supabase Project URL (https://xxxx.supabase.co)" />
-    <input id="supaKey" type="text" placeholder="Supabase anon public key" />
     <input id="zapierWebhook" type="text" placeholder="Zapier Catch Hook URL (optional — sent on Accept)" />
-    <button id="connectBtn">Connect</button>
+    <button id="connectBtn">Save webhook</button>
   </div>
-  <p class="status-msg" id="statusMsg">Enter your project URL and anon key, then click Connect. Saved in this browser only.</p>
+  <p class="status-msg" id="statusMsg">Connecting…</p>
 
   <div class="metrics" id="metrics"></div>
 
@@ -326,8 +324,15 @@
 </div>
 
 <script>
-let SUPA_URL = '';
-let SUPA_KEY = '';
+// This project's URL and anon key are meant to be public — they ship inside
+// every Supabase client app's JS bundle by design, so hardcoding them here
+// (instead of asking staff to paste them in each session) costs nothing in
+// exposure and removes a step that used to block every page load.
+const SUPABASE_URL = 'https://qjglewesqqnxupeklzuc.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFqZ2xld2VzcXFueHVwZWtsenVjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ3NDc0MjksImV4cCI6MjEwMDMyMzQyOX0.uZ6bjAPBUZQW3JZGzc1qgtffyTznbkrWGgDZpB66ZAk';
+
+let SUPA_URL = SUPABASE_URL;
+let SUPA_KEY = SUPABASE_ANON_KEY;
 let ZAPIER_WEBHOOK = '';
 let bookings = [];      // full booking rows joined with space + hub + customer + rates
 let perfRows = [];
@@ -361,6 +366,14 @@ const ALL_BOOKINGS_COLUMNS = {
 
 function fmtMoney(n) { return 'RM ' + Number(n || 0).toLocaleString(); }
 function statusClass(s) { return 'status-pill status-' + (s || ''); }
+// Every value that ultimately traces back to customer-submitted input (company,
+// contact name, notes, etc.) goes through here before hitting innerHTML — a
+// stray "<" or "&" from a customer field would otherwise break row rendering
+// or inject markup into a staff member's page.
+const ESCAPE_MAP = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+function escapeHtml(str) {
+  return String(str == null ? '' : str).replace(/[&<>"']/g, ch => ESCAPE_MAP[ch]);
+}
 // timestamptz columns come back as full ISO strings — trim to the date, matching
 // how start_date/end_date (plain date columns) already print elsewhere.
 function fmtDate(iso) { return iso ? iso.slice(0, 10) : '—'; }
@@ -414,9 +427,10 @@ async function patchBooking(bookingId, fields) {
   if (!res.ok) throw new Error('Update failed: ' + res.status);
 }
 
-// Kept for the status-change dropdown on ongoing/pending rows.
-function updateBookingStatus(bookingId, newStatus) {
-  return patchBooking(bookingId, { status: newStatus });
+// Kept for the status-change dropdown on ongoing/pending rows. extraFields lets
+// callers attach things like rejection_reason alongside the status change.
+function updateBookingStatus(bookingId, newStatus, extraFields) {
+  return patchBooking(bookingId, Object.assign({ status: newStatus }, extraFields));
 }
 
 // Append-only audit trail of what we notified about each booking.
@@ -554,16 +568,10 @@ async function loadCustomers() {
   }
 }
 
+// Supabase URL/key are fixed constants now (see top of script) — this button
+// only saves the optional Zapier webhook, then reloads so it takes effect.
 function connect() {
-  SUPA_URL = document.getElementById('supaUrl').value.trim().replace(/\/$/, '');
-  SUPA_KEY = document.getElementById('supaKey').value.trim();
   ZAPIER_WEBHOOK = document.getElementById('zapierWebhook').value.trim();
-  if (!SUPA_URL || !SUPA_KEY) {
-    document.getElementById('statusMsg').textContent = 'Enter both the project URL and anon key.';
-    return;
-  }
-  localStorage.setItem('cl_supabase_url', SUPA_URL);
-  localStorage.setItem('cl_supabase_key', SUPA_KEY);
   localStorage.setItem('cl_zapier_webhook', ZAPIER_WEBHOOK);
   loadAll();
 }
@@ -572,7 +580,7 @@ function renderHubFilters() {
   const hubs = ['All hubs', ...new Set(bookings.map(b => b.hub).filter(h => h && h !== '—'))];
   const container = document.getElementById('hubFilters');
   container.innerHTML = hubs.map(h =>
-    `<button data-hub="${h}" class="${h === activeHub ? 'active' : ''}">${h}</button>`
+    `<button data-hub="${escapeHtml(h)}" class="${h === activeHub ? 'active' : ''}">${escapeHtml(h)}</button>`
   ).join('');
   container.querySelectorAll('button').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -594,7 +602,7 @@ function renderSpaceFilter() {
   const spaces = ['All spaces', ...new Set(hubBookings.map(b => b.space).filter(s => s && s !== '—'))];
   if (!spaces.includes(activeSpace)) activeSpace = 'All spaces';
   document.getElementById('spaceFilterSelect').innerHTML = spaces.map(s =>
-    `<option value="${s}" ${s === activeSpace ? 'selected' : ''}>${s}</option>`
+    `<option value="${escapeHtml(s)}" ${s === activeSpace ? 'selected' : ''}>${escapeHtml(s)}</option>`
   ).join('');
 }
 
@@ -655,10 +663,10 @@ function inquiryRowHtml(b) {
         <button class="link-btn view-inquiry-btn" data-id="${b.id}">View details</button>
       </div>`;
   return `<tr>
-    <td>${b.company || '—'}<br><span class="quote-detail">${b.customer}</span></td>
-    <td>${b.eventType}</td>
-    <td>${b.hub}<br><span class="quote-detail">${b.space}</span></td>
-    <td>${b.start_date} → ${b.end_date}</td>
+    <td>${escapeHtml(b.company) || '—'}<br><span class="quote-detail">${escapeHtml(b.customer)}</span></td>
+    <td>${escapeHtml(b.eventType)}</td>
+    <td>${escapeHtml(b.hub)}<br><span class="quote-detail">${escapeHtml(b.space)}</span></td>
+    <td>${escapeHtml(b.start_date)} → ${escapeHtml(b.end_date)}</td>
     <td>${b.duration} day${b.duration === 1 ? '' : 's'}</td>
     <td><span class="quote">${fmtMoney(b.quote.total)}</span><br>${quoteDetail}</td>
     <td><span class="${statusClass(b.status)}">${statusLabel(b.status)}</span></td>
@@ -675,10 +683,10 @@ function pendingRowHtml(b) {
     ? `<span class="notify-warn">Accepted — notification failed.<button class="resend-btn" data-id="${b.id}">Resend</button></span>`
     : '';
   return `<tr>
-    <td>${b.company || '—'}<br><span class="quote-detail">${b.customer}</span></td>
-    <td>${b.eventType}</td>
-    <td>${b.hub}<br><span class="quote-detail">${b.space}</span></td>
-    <td>${b.start_date} → ${b.end_date}</td>
+    <td>${escapeHtml(b.company) || '—'}<br><span class="quote-detail">${escapeHtml(b.customer)}</span></td>
+    <td>${escapeHtml(b.eventType)}</td>
+    <td>${escapeHtml(b.hub)}<br><span class="quote-detail">${escapeHtml(b.space)}</span></td>
+    <td>${escapeHtml(b.start_date)} → ${escapeHtml(b.end_date)}</td>
     <td><span class="quote">${fmtMoney(b.quote.total)}</span><br>${quoteDetail}</td>
     <td><span class="${statusClass(b.status)}">${statusLabel(b.status)}</span></td>
     <td>${actionSelect(b)}${warn}</td>
@@ -689,9 +697,9 @@ function rowHtml(b) {
   const quoteDetail = (b.quote.weekdays || b.quote.weekends)
     ? `<span class="quote-detail">${b.quote.weekdays} wkdy + ${b.quote.weekends} wknd</span>` : '';
   return `<tr>
-    <td>${b.customer}${b.company ? '<br><span class="quote-detail">' + b.company + '</span>' : ''}</td>
-    <td>${b.hub}<br><span class="quote-detail">${b.space}</span></td>
-    <td>${b.start_date} → ${b.end_date}</td>
+    <td>${escapeHtml(b.customer)}${b.company ? '<br><span class="quote-detail">' + escapeHtml(b.company) + '</span>' : ''}</td>
+    <td>${escapeHtml(b.hub)}<br><span class="quote-detail">${escapeHtml(b.space)}</span></td>
+    <td>${escapeHtml(b.start_date)} → ${escapeHtml(b.end_date)}</td>
     <td><span class="quote">${fmtMoney(b.quote.total)}</span><br>${quoteDetail}</td>
     <td><span class="${statusClass(b.status)}">${statusLabel(b.status)}</span></td>
     <td>${actionSelect(b)}</td>
@@ -704,11 +712,11 @@ function allBookingRowHtml(b) {
   const quoteDetail = (b.quote.weekdays || b.quote.weekends)
     ? `<span class="quote-detail">${b.quote.weekdays} wkdy + ${b.quote.weekends} wknd</span>` : '';
   return `<tr>
-    <td>${b.company || '—'}<br><span class="quote-detail">${b.customer}</span></td>
-    <td>${b.eventType}</td>
-    <td>${b.hub}</td>
-    <td>${b.space}</td>
-    <td>${b.start_date} → ${b.end_date}</td>
+    <td>${escapeHtml(b.company) || '—'}<br><span class="quote-detail">${escapeHtml(b.customer)}</span></td>
+    <td>${escapeHtml(b.eventType)}</td>
+    <td>${escapeHtml(b.hub)}</td>
+    <td>${escapeHtml(b.space)}</td>
+    <td>${escapeHtml(b.start_date)} → ${escapeHtml(b.end_date)}</td>
     <td>${b.duration} day${b.duration === 1 ? '' : 's'}</td>
     <td><span class="quote">${fmtMoney(b.quote.total)}</span><br>${quoteDetail}</td>
     <td><span class="${statusClass(b.status)}">${statusLabel(b.status)}</span></td>
@@ -841,13 +849,13 @@ function customerRowHtml(c) {
   }, null) || c.created_at;
   const sst = c.sst_registered ? (c.sst_number || 'Registered') : '—';
   return `<tr>
-    <td>${c.company || '—'}<br><span class="quote-detail">${c.name || '—'}</span></td>
-    <td>${c.email || '—'}</td>
-    <td>${c.phone || '—'}</td>
+    <td>${escapeHtml(c.company) || '—'}<br><span class="quote-detail">${escapeHtml(c.name) || '—'}</span></td>
+    <td>${escapeHtml(c.email) || '—'}</td>
+    <td>${escapeHtml(c.phone) || '—'}</td>
     <td>${totalBookings}</td>
     <td>${fmtMoney(totalRevenue)}</td>
     <td>${fmtDate(lastActivity)}</td>
-    <td>${sst}</td>
+    <td>${escapeHtml(sst)}</td>
     <td><button class="link-btn view-customer-btn" data-id="${c.id}">View details</button></td>
   </tr>`;
 }
@@ -891,9 +899,9 @@ function openCustomerDetail(customerId) {
         const space = b.spaces || {};
         const hub = space.hubs || {};
         return `<tr>
-          <td>${hub.name || '—'}</td>
-          <td>${space.name || '—'}</td>
-          <td>${b.start_date || '—'} → ${b.end_date || '—'}</td>
+          <td>${escapeHtml(hub.name) || '—'}</td>
+          <td>${escapeHtml(space.name) || '—'}</td>
+          <td>${escapeHtml(b.start_date) || '—'} → ${escapeHtml(b.end_date) || '—'}</td>
           <td><span class="${statusClass(b.status)}">${statusLabel(b.status)}</span></td>
           <td>${fmtMoney(b.price)}</td>
         </tr>`;
@@ -901,14 +909,14 @@ function openCustomerDetail(customerId) {
     : `<tr><td colspan="5" style="color:#6b6b66;">No bookings yet.</td></tr>`;
 
   document.getElementById('customerModalBody').innerHTML = `
-    <h3>${c.company || c.name || 'Customer'}</h3>
-    <div class="modal-field"><span class="field-label">PIC</span>${c.name || '—'}</div>
-    <div class="modal-field"><span class="field-label">Email</span>${c.email || '—'}</div>
-    <div class="modal-field"><span class="field-label">Phone</span>${c.phone || '—'}</div>
-    <div class="modal-field"><span class="field-label">Address</span>${c.address || '—'}</div>
-    <div class="modal-field"><span class="field-label">Registration no.</span>${c.registration_no || '—'}</div>
-    <div class="modal-field"><span class="field-label">SST</span>${c.sst_registered ? (c.sst_number || 'Registered, no. on file') : 'Not registered'}</div>
-    <div class="modal-field"><span class="field-label">Notes</span>${c.notes || '—'}</div>
+    <h3>${escapeHtml(c.company) || escapeHtml(c.name) || 'Customer'}</h3>
+    <div class="modal-field"><span class="field-label">PIC</span>${escapeHtml(c.name) || '—'}</div>
+    <div class="modal-field"><span class="field-label">Email</span>${escapeHtml(c.email) || '—'}</div>
+    <div class="modal-field"><span class="field-label">Phone</span>${escapeHtml(c.phone) || '—'}</div>
+    <div class="modal-field"><span class="field-label">Address</span>${escapeHtml(c.address) || '—'}</div>
+    <div class="modal-field"><span class="field-label">Registration no.</span>${escapeHtml(c.registration_no) || '—'}</div>
+    <div class="modal-field"><span class="field-label">SST</span>${c.sst_registered ? escapeHtml(c.sst_number || 'Registered, no. on file') : 'Not registered'}</div>
+    <div class="modal-field"><span class="field-label">Notes</span>${escapeHtml(c.notes) || '—'}</div>
     <div class="modal-field"><span class="field-label">Customer since</span>${fmtDate(c.created_at)}</div>
     <div class="modal-field">
       <span class="field-label">Booking history</span>
@@ -934,23 +942,23 @@ function openInquiryDetail(bookingId) {
   const quoteBreakdown = (b.quote.weekdays || b.quote.weekends)
     ? `${b.quote.weekdays} weekday day(s) + ${b.quote.weekends} weekend day(s) = ${fmtMoney(b.quote.total)}`
     : fmtMoney(b.quote.total);
-  const sst = b.sst_registered ? (b.sst_number || 'Registered, no. on file') : 'Not registered';
+  const sst = b.sst_registered ? escapeHtml(b.sst_number || 'Registered, no. on file') : 'Not registered';
 
   document.getElementById('inquiryModalBody').innerHTML = `
-    <h3>${b.company || b.customer || 'Inquiry'}</h3>
-    <div class="modal-field"><span class="field-label">PIC</span>${b.customer || '—'}</div>
-    <div class="modal-field"><span class="field-label">Company</span>${b.company || '—'}</div>
-    <div class="modal-field"><span class="field-label">Email</span>${b.email || '—'}</div>
-    <div class="modal-field"><span class="field-label">Phone</span>${b.phone || '—'}</div>
-    <div class="modal-field"><span class="field-label">Event type</span>${b.eventType || '—'}</div>
-    <div class="modal-field"><span class="field-label">Requested hub / space</span>${b.preferredHub || '—'} / ${b.preferredSpace || '—'}</div>
-    <div class="modal-field"><span class="field-label">Confirmed hub / space</span>${b.hub} / ${b.space}</div>
-    <div class="modal-field"><span class="field-label">Dates</span>${b.start_date} → ${b.end_date} (${b.duration} day${b.duration === 1 ? '' : 's'})</div>
+    <h3>${escapeHtml(b.company) || escapeHtml(b.customer) || 'Inquiry'}</h3>
+    <div class="modal-field"><span class="field-label">PIC</span>${escapeHtml(b.customer) || '—'}</div>
+    <div class="modal-field"><span class="field-label">Company</span>${escapeHtml(b.company) || '—'}</div>
+    <div class="modal-field"><span class="field-label">Email</span>${escapeHtml(b.email) || '—'}</div>
+    <div class="modal-field"><span class="field-label">Phone</span>${escapeHtml(b.phone) || '—'}</div>
+    <div class="modal-field"><span class="field-label">Event type</span>${escapeHtml(b.eventType) || '—'}</div>
+    <div class="modal-field"><span class="field-label">Requested hub / space</span>${escapeHtml(b.preferredHub) || '—'} / ${escapeHtml(b.preferredSpace) || '—'}</div>
+    <div class="modal-field"><span class="field-label">Confirmed hub / space</span>${escapeHtml(b.hub)} / ${escapeHtml(b.space)}</div>
+    <div class="modal-field"><span class="field-label">Dates</span>${escapeHtml(b.start_date)} → ${escapeHtml(b.end_date)} (${b.duration} day${b.duration === 1 ? '' : 's'})</div>
     <div class="modal-field"><span class="field-label">Quotation</span>${quoteBreakdown}</div>
-    <div class="modal-field"><span class="field-label">Address</span>${b.address || '—'}</div>
-    <div class="modal-field"><span class="field-label">Registration no.</span>${b.registration_no || '—'}</div>
+    <div class="modal-field"><span class="field-label">Address</span>${escapeHtml(b.address) || '—'}</div>
+    <div class="modal-field"><span class="field-label">Registration no.</span>${escapeHtml(b.registration_no) || '—'}</div>
     <div class="modal-field"><span class="field-label">SST</span>${sst}</div>
-    <div class="modal-field"><span class="field-label">Notes</span>${b.notes || '—'}</div>
+    <div class="modal-field"><span class="field-label">Notes</span>${escapeHtml(b.notes) || '—'}</div>
     <div class="modal-field"><span class="field-label">Submitted</span>${fmtDate(b.created_at)}</div>
   `;
   document.getElementById('inquiryModal').style.display = 'flex';
@@ -1079,9 +1087,18 @@ function attachActionHandlers() {
       const bookingId = e.target.getAttribute('data-id');
       const newStatus = e.target.value;
       if (!newStatus) return;
+      // 'rejected' has a required reason everywhere else it's reachable (the
+      // dedicated Reject flow on inquiries) — this dropdown is the other path
+      // to the same status, so it needs the same requirement, not a silent bypass.
+      let extraFields;
+      if (newStatus === 'rejected') {
+        const reason = (prompt('Reason for rejection (required):') || '').trim();
+        if (!reason) { e.target.value = ''; return; }
+        extraFields = { rejection_reason: reason };
+      }
       e.target.disabled = true;
       try {
-        await updateBookingStatus(bookingId, newStatus);
+        await updateBookingStatus(bookingId, newStatus, extraFields);
         const b = bookings.find(x => x.id === bookingId);
         if (b) b.status = newStatus;
         render();
@@ -1221,19 +1238,16 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') { closeCustomerModal(); closeInquiryModal(); }
 });
 
-// Auto-load saved credentials + last-selected tab
+// Auto-load saved Zapier hook + last-selected tab. Supabase connects
+// immediately on every page load now — no credentials to wait on.
 (function () {
-  const url = localStorage.getItem('cl_supabase_url');
-  const key = localStorage.getItem('cl_supabase_key');
   const hook = localStorage.getItem('cl_zapier_webhook');
   const savedTab = localStorage.getItem('cl_active_tab');
-  if (url) document.getElementById('supaUrl').value = url;
-  if (key) document.getElementById('supaKey').value = key;
   if (hook) document.getElementById('zapierWebhook').value = hook;
   if (hook) ZAPIER_WEBHOOK = hook;
   if (savedTab === 'bookings' || savedTab === 'revenue' || savedTab === 'customers') currentTab = savedTab;
   updateTabUI();   // independent of connection state — the tab shell shows immediately
-  if (url && key) { SUPA_URL = url; SUPA_KEY = key; loadAll(); }
+  loadAll();
 })();
 </script>
 
