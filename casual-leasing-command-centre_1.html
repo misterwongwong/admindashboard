@@ -222,6 +222,25 @@
   }
   .modal-bookings-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 6px; }
   .modal-bookings-table th, .modal-bookings-table td { padding: 6px 8px; border-bottom: 1px solid #f0f0ed; text-align: left; }
+
+  /* Customers tab — expandable list (replaces the old table + pop-up modal).
+     Each row shows a company name + a couple of glance stats; clicking it
+     expands the same detail that used to live in the modal, inline instead. */
+  .customer-item { border-bottom: 1px solid #f0f0ed; }
+  .customer-item:last-child { border-bottom: none; }
+  .customer-row-toggle {
+    width: 100%; display: flex; align-items: center; gap: 12px;
+    background: none; border: none; padding: 12px 14px; cursor: pointer; text-align: left; font-family: inherit;
+  }
+  .customer-row-toggle:hover { background: #f7f7f5; }
+  /* Name grows to fill the row; the stats+arrow group stays fixed-width so it
+     lands in the same spot on every row instead of drifting with name length
+     (that drift is what 3-way justify-content: space-between was causing). */
+  .customer-row-main { flex: 1 1 auto; min-width: 0; display: flex; align-items: baseline; gap: 8px; }
+  .customer-row-name { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .customer-row-right { flex: 0 0 auto; display: flex; align-items: center; gap: 10px; }
+  .customer-row-stats { font-size: 12px; color: #6b6b66; white-space: nowrap; }
+  .customer-detail { padding: 2px 14px 18px; background: #fbfbfa; }
 </style>
 </head>
 <body>
@@ -397,12 +416,7 @@
     <input class="ab-search" id="customerSearch" type="text" placeholder="Search company, PIC, email…" />
   </div>
   <div class="card">
-    <table id="customersTable" style="display:none;">
-      <thead>
-        <tr><th>Company / PIC</th><th>Email</th><th>Phone</th><th>Total bookings</th><th>Total revenue</th><th>Last activity</th><th>SST</th><th>Action</th></tr>
-      </thead>
-      <tbody id="customersBody"></tbody>
-    </table>
+    <div id="customersList" class="customer-list" style="display:none;"></div>
     <div id="customersEmpty" class="empty-state">Connect to load customers.</div>
   </div>
 
@@ -424,13 +438,6 @@
 
   </div>
 
-</div>
-
-<div id="customerModal" class="modal-overlay" style="display:none;">
-  <div class="modal-box">
-    <button class="modal-close" id="customerModalClose" aria-label="Close">&times;</button>
-    <div id="customerModalBody"></div>
-  </div>
 </div>
 
 <div id="inquiryModal" class="modal-overlay" style="display:none;">
@@ -471,6 +478,7 @@ let revenueSubTab = 'overview';      // which of the 3 sections is showing insid
 let ongoingCollapsed = true;    // Ongoing bookings starts collapsed — longest section, least time-sensitive
 let rejectingId = null;         // inquiry id currently showing the inline reject-reason box
 const notifyPayloads = {};      // bookingId -> payload, present only while a webhook send is outstanding/failed
+const expandedCustomers = new Set();   // merged-customer keys currently expanded in the Customers list
 
 const STATUS_FLOW = ['inquired', 'pending', 'confirmed', 'completed', 'cancelled', 'rejected'];
 
@@ -1098,62 +1106,81 @@ function renderRevenueSummary(perf, filtered) {
   `;
 }
 
-// One row per customer. isRevenueBooking/fmtMoney/fmtDate are the same helpers
-// already used on the Revenue tab — same confirmed+completed definition, not
-// reinvented here.
-function customerRowHtml(c) {
-  const custBookings = c.bookings || [];
-  const totalBookings = custBookings.length;
-  const totalRevenue = custBookings.filter(isRevenueBooking).reduce((s, b) => s + Number(b.price || 0), 0);
-  const lastActivity = custBookings.reduce((latest, b) => {
-    return (b.start_date && (!latest || b.start_date > latest)) ? b.start_date : latest;
-  }, null) || c.created_at;
-  const sst = c.sst_registered ? (c.sst_number || 'Registered') : '—';
-  return `<tr>
-    <td>${escapeHtml(c.company) || '—'}<br><span class="quote-detail">${escapeHtml(c.name) || '—'}</span></td>
-    <td>${escapeHtml(c.email) || '—'}</td>
-    <td>${escapeHtml(c.phone) || '—'}</td>
-    <td>${totalBookings}</td>
-    <td>${fmtMoney(totalRevenue)}</td>
-    <td>${fmtDate(lastActivity)}</td>
-    <td>${escapeHtml(sst)}</td>
-    <td><button class="link-btn view-customer-btn" data-id="${c.id}">View details</button></td>
-  </tr>`;
+// Groups customer records that share the same (non-empty) email into one
+// display entry — same person/company submitted more than once (almost
+// always a repeat form submission, not two genuinely different customers).
+// Their booking histories are combined so nothing is hidden, it's just no
+// longer split across look-alike rows. Records without an email pass through
+// unmerged — a blank email isn't a reliable identity key, so grouping on that
+// would wrongly combine unrelated customers.
+function computeMergedCustomers() {
+  const groups = new Map(); // normalized email -> merged customer
+  const passthrough = [];
+  customers.forEach(c => {
+    const key = (c.email || '').trim().toLowerCase();
+    if (!key) { passthrough.push({ ...c, mergedIds: [c.id], bookings: c.bookings || [] }); return; }
+    if (!groups.has(key)) {
+      groups.set(key, { ...c, mergedIds: [c.id], bookings: (c.bookings || []).slice() });
+      return;
+    }
+    const g = groups.get(key);
+    g.mergedIds.push(c.id);
+    g.bookings = g.bookings.concat(c.bookings || []);
+    ['company', 'name', 'phone', 'address', 'registration_no', 'sst_number', 'notes'].forEach(field => {
+      if (!g[field] && c[field]) g[field] = c[field];
+    });
+    if (c.sst_registered) g.sst_registered = true;
+    if (c.created_at && (!g.created_at || c.created_at < g.created_at)) g.created_at = c.created_at;
+  });
+  return [...groups.values(), ...passthrough];
 }
 
 // Deliberately ignores activeHub/activeSpace — a customer can have bookings
 // across multiple hubs, so filtering the customer list by hub doesn't apply.
 function computeCustomersFiltered() {
+  const merged = computeMergedCustomers();
   const q = customerSearchQuery.trim().toLowerCase();
-  if (!q) return customers;
-  return customers.filter(c =>
+  if (!q) return merged;
+  return merged.filter(c =>
     (c.company || '').toLowerCase().includes(q) ||
     (c.name || '').toLowerCase().includes(q) ||
     (c.email || '').toLowerCase().includes(q)
   );
 }
 
-function renderCustomersTab() {
-  const rows = computeCustomersFiltered();
-  const table = document.getElementById('customersTable');
-  const empty = document.getElementById('customersEmpty');
-  if (rows.length === 0) {
-    table.style.display = 'none'; empty.style.display = 'block';
-    empty.textContent = customers.length === 0 ? 'Connect to load customers.' : 'No customers match this search.';
-  } else {
-    table.style.display = 'table'; empty.style.display = 'none';
-    document.getElementById('customersBody').innerHTML = rows.map(customerRowHtml).join('');
-  }
-  document.querySelectorAll('.view-customer-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => openCustomerDetail(e.target.getAttribute('data-id')));
-  });
+// Condensed by default: company name + two glance stats. Clicking expands the
+// same detail that used to live in a pop-up modal, inline instead — the
+// expand/collapse state (expandedCustomers) survives re-renders the same way
+// rejectingId already does for the inline reject box elsewhere in this file.
+function customerRowHtml(c) {
+  const key = c.mergedIds.join(',');
+  const custBookings = c.bookings || [];
+  const totalBookings = custBookings.length;
+  const totalRevenue = custBookings.filter(isRevenueBooking).reduce((s, b) => s + Number(b.price || 0), 0);
+  const expanded = expandedCustomers.has(key);
+  const mergedNote = c.mergedIds.length > 1
+    ? `<span class="quote-detail">(${c.mergedIds.length} duplicate records merged)</span>` : '';
+  return `<div class="customer-item">
+    <button class="customer-row-toggle" data-key="${key}" type="button">
+      <span class="customer-row-main">
+        <span class="customer-row-name">${escapeHtml(c.company) || escapeHtml(c.name) || '—'}</span>
+        ${mergedNote}
+      </span>
+      <span class="customer-row-right">
+        <span class="customer-row-stats">${totalBookings} booking${totalBookings === 1 ? '' : 's'} · ${fmtMoney(totalRevenue)}</span>
+        <span class="collapse-arrow">${expanded ? '▾' : '▸'}</span>
+      </span>
+    </button>
+    ${expanded ? customerDetailHtml(c) : ''}
+  </div>`;
 }
 
-// Populates and opens the single shared modal element — not per-row markup.
-function openCustomerDetail(customerId) {
-  const c = customers.find(x => x.id === customerId);
-  if (!c) return;
-
+// The detail block previously shown in the customer pop-up modal, now
+// rendered inline under the row instead of in a separate overlay.
+function customerDetailHtml(c) {
+  const lastActivity = (c.bookings || []).reduce((latest, b) => {
+    return (b.start_date && (!latest || b.start_date > latest)) ? b.start_date : latest;
+  }, null);
   const history = (c.bookings || []).slice().sort((a, b) => (b.start_date || '').localeCompare(a.start_date || ''));
   const rowsHtml = history.length
     ? history.map(b => {
@@ -1169,8 +1196,7 @@ function openCustomerDetail(customerId) {
       }).join('')
     : `<tr><td colspan="5" style="color:#6b6b66;">No bookings yet.</td></tr>`;
 
-  document.getElementById('customerModalBody').innerHTML = `
-    <h3>${escapeHtml(c.company) || escapeHtml(c.name) || 'Customer'}</h3>
+  return `<div class="customer-detail">
     <div class="modal-field"><span class="field-label">PIC</span>${escapeHtml(c.name) || '—'}</div>
     <div class="modal-field"><span class="field-label">Email</span>${escapeHtml(c.email) || '—'}</div>
     <div class="modal-field"><span class="field-label">Phone</span>${escapeHtml(c.phone) || '—'}</div>
@@ -1179,6 +1205,7 @@ function openCustomerDetail(customerId) {
     <div class="modal-field"><span class="field-label">SST</span>${c.sst_registered ? escapeHtml(c.sst_number || 'Registered, no. on file') : 'Not registered'}</div>
     <div class="modal-field"><span class="field-label">Notes</span>${escapeHtml(c.notes) || '—'}</div>
     <div class="modal-field"><span class="field-label">Customer since</span>${fmtDate(c.created_at)}</div>
+    <div class="modal-field"><span class="field-label">Last activity</span>${fmtDate(lastActivity)}</div>
     <div class="modal-field">
       <span class="field-label">Booking history</span>
       <table class="modal-bookings-table">
@@ -1186,12 +1213,28 @@ function openCustomerDetail(customerId) {
         <tbody>${rowsHtml}</tbody>
       </table>
     </div>
-  `;
-  document.getElementById('customerModal').style.display = 'flex';
+  </div>`;
 }
 
-function closeCustomerModal() {
-  document.getElementById('customerModal').style.display = 'none';
+function renderCustomersTab() {
+  const rows = computeCustomersFiltered();
+  const list = document.getElementById('customersList');
+  const empty = document.getElementById('customersEmpty');
+  if (rows.length === 0) {
+    list.innerHTML = ''; list.style.display = 'none'; empty.style.display = 'block';
+    empty.textContent = customers.length === 0 ? 'Connect to load customers.' : 'No customers match this search.';
+  } else {
+    list.style.display = 'block'; empty.style.display = 'none';
+    list.innerHTML = rows.map(customerRowHtml).join('');
+  }
+  document.querySelectorAll('.customer-row-toggle').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const key = btn.getAttribute('data-key');
+      if (expandedCustomers.has(key)) expandedCustomers.delete(key);
+      else expandedCustomers.add(key);
+      renderCustomersTab();
+    });
+  });
 }
 
 // Single reusable modal driven by bookingId — same pattern as how rejectingId
@@ -1687,17 +1730,15 @@ document.getElementById('customerSearch').addEventListener('input', (e) => {
 });
 document.getElementById('ongoingToggle').addEventListener('click', toggleOngoingCollapse);
 
-// Customer + inquiry modals: close via the × button, clicking the backdrop, or Escape.
-document.getElementById('customerModalClose').addEventListener('click', closeCustomerModal);
-document.getElementById('customerModal').addEventListener('click', (e) => {
-  if (e.target.id === 'customerModal') closeCustomerModal();
-});
+// Inquiry modal: close via the × button, clicking the backdrop, or Escape.
+// (The customer modal is gone — Customers Phase 1 replaced it with the
+// inline expandable list above.)
 document.getElementById('inquiryModalClose').addEventListener('click', closeInquiryModal);
 document.getElementById('inquiryModal').addEventListener('click', (e) => {
   if (e.target.id === 'inquiryModal') closeInquiryModal();
 });
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') { closeCustomerModal(); closeInquiryModal(); }
+  if (e.key === 'Escape') closeInquiryModal();
 });
 
 // Auto-load Zapier override (if any) + last-selected tab. Supabase connects
