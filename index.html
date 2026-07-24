@@ -78,6 +78,7 @@
   .status-pill { display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 500; white-space: nowrap; }
   .status-inquired { background: #e0ecfb; color: #1c5aa8; }
   .status-pending { background: #fdf1cf; color: #8a6d1a; }
+  .status-submitted { background: #e8e0f7; color: #5b3a9e; }
   .status-confirmed { background: #fbdede; color: #a3312d; }
   .status-completed { background: #dcefe4; color: #1f6b45; }
   .status-cancelled { background: #eaeae7; color: #6b6b66; }
@@ -112,6 +113,27 @@
   .reject-box input { padding: 6px 8px; border: 1px solid #d8d8d3; border-radius: 6px; font-size: 12px; }
   .reject-actions { display: flex; gap: 6px; align-items: center; }
   .link-btn { background: none; border: none; color: #6b6b66; font-size: 12px; cursor: pointer; text-decoration: underline; padding: 6px 4px; }
+
+  /* Submitted-for-review cards: company details + documents + Accept/Reject.
+     A table row can't fit this much detail legibly, so each submission gets
+     its own card instead. */
+  .review-card { background: white; border: 1px solid #e6e6e1; border-radius: 10px; padding: 16px 18px; margin-bottom: 12px; }
+  .review-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+  .review-head h3 { font-size: 15px; margin: 0 0 2px; }
+  .review-head .quote-detail { font-size: 12px; }
+  .review-meta { font-size: 12px; color: #6b6b66; text-align: right; }
+  .review-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px 16px; margin-bottom: 14px; padding: 12px; background: #faf9f6; border-radius: 8px; }
+  .review-field .label { display: block; font-size: 11px; color: #9a9a94; text-transform: uppercase; letter-spacing: 0.02em; }
+  .review-field .value { font-size: 13px; color: #333; }
+  .review-docs { margin-bottom: 14px; }
+  .review-docs-title { font-size: 12px; font-weight: 600; color: #6b6b66; margin: 0 0 8px; text-transform: uppercase; letter-spacing: 0.02em; }
+  .review-doc { display: flex; align-items: center; gap: 8px; padding: 7px 0; border-bottom: 1px solid #f0f0ec; font-size: 13px; }
+  .review-doc:last-child { border-bottom: none; }
+  .review-doc-name { flex: 1; }
+  .review-doc-missing { color: #a3312d; font-size: 12px; }
+  .view-doc-btn { padding: 5px 12px; border: 1px solid #d8d8d3; border-radius: 6px; font-size: 12px; background: white; color: #333; cursor: pointer; }
+  .view-doc-btn:hover { background: #f4f4f0; }
+  .view-doc-btn:disabled { color: #9a9a94; cursor: default; }
 
   /* Space filter (extends the hub filter in the toolbar) */
   .space-select { padding: 7px 10px; border: 1px solid #d8d8d3; border-radius: 6px; font-size: 13px; background: white; color: #333; cursor: pointer; }
@@ -295,6 +317,13 @@
   </div>
   </div>
 
+  <div id="subtabSubmitted" class="tab-panel">
+  <p class="section-title">Submitted for review</p>
+  <p class="section-sub">Customers who've completed their company details and uploaded documents. Review everything below, then Accept (confirms the booking and kicks off the leasing agreement) or Reject (sends the customer a rejection email with your reason).</p>
+  <div id="submittedEmpty" class="empty-state">No submissions awaiting review.</div>
+  <div id="submittedList"></div>
+  </div>
+
   <div id="subtabOngoing" class="tab-panel">
   <button class="section-title collapsible-toggle" id="ongoingToggle" type="button">
     <span id="ongoingToggleLabel">Ongoing bookings</span>
@@ -461,7 +490,7 @@ let ongoingCollapsed = true;    // Ongoing bookings starts collapsed — longest
 let rejectingId = null;         // inquiry id currently showing the inline reject-reason box
 const expandedCustomers = new Set();   // merged-customer keys currently expanded in the Customers list
 
-const STATUS_FLOW = ['inquired', 'pending', 'confirmed', 'completed', 'cancelled', 'rejected'];
+const STATUS_FLOW = ['inquired', 'pending', 'submitted', 'confirmed', 'completed', 'cancelled', 'rejected'];
 
 // "All bookings" master table state — independent of the section-specific tables above.
 const activeStatuses = new Set();   // empty = show every status
@@ -541,6 +570,24 @@ async function apiGet(path) {
   return res.json();
 }
 
+// Documents uploaded during confirm-booking.html live in the private
+// 'booking-documents' storage bucket — booking_documents.file_url stores just
+// the object path, not a usable link. Mint a short-lived signed URL on demand
+// (rather than pre-signing every doc on every render) whenever staff click
+// "View". Anon has a SELECT policy on this bucket, so the anon key alone is
+// enough to request the sign.
+async function getSignedDocUrl(path) {
+  const encodedPath = path.split('/').map(encodeURIComponent).join('/');
+  const res = await fetch(SUPA_URL + '/storage/v1/object/sign/booking-documents/' + encodedPath, {
+    method: 'POST',
+    headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ expiresIn: 3600 })
+  });
+  if (!res.ok) throw new Error('Could not create a link for this document (' + res.status + ')');
+  const data = await res.json();
+  return SUPA_URL + '/storage/v1' + data.signedURL;
+}
+
 async function patchBooking(bookingId, fields) {
   const res = await fetch(SUPA_URL + '/rest/v1/bookings?id=eq.' + bookingId, {
     method: 'PATCH',
@@ -579,11 +626,12 @@ async function loadAll() {
     // hubs and spaces (space_id/preferred_space_id, and preferred_hub_id has
     // no confirmed-hub counterpart column but still needs the hint to resolve).
     const bookingData = await apiGet(
-      'bookings?select=id,start_date,end_date,status,purpose,price,created_at,updated_at,' +
+      'bookings?select=id,start_date,end_date,status,purpose,price,created_at,updated_at,submitted_at,' +
       'spaces!space_id(id,name,weekday_price,weekend_price,hubs(name)),' +
       'preferred_hub:hubs!preferred_hub_id(name),' +
       'preferred_space:spaces!preferred_space_id(name),' +
-      'customers(id,name,company,email,phone,address,registration_no,sst_number,sst_registered,notes)' +
+      'customers(id,name,company,email,phone,address,registration_no,sst_number,sst_registered,notes,tin_number,msic_code,einvoice_required,tax_exempted),' +
+      'booking_documents(id,doc_type,file_url,status,uploaded_at)' +
       '&order=created_at.desc'
     );
     bookings = bookingData.map(b => {
@@ -609,6 +657,11 @@ async function loadAll() {
         sst_number: cust.sst_number || '',
         sst_registered: !!cust.sst_registered,
         notes: cust.notes || '',
+        tin_number: cust.tin_number || '',
+        msic_code: cust.msic_code || '',
+        einvoice_required: !!cust.einvoice_required,
+        tax_exempted: !!cust.tax_exempted,
+        documents: b.booking_documents || [],
         eventType: b.purpose || '—',
         hub: hub.name || '—',
         space: space.name || '—',
@@ -621,6 +674,7 @@ async function loadAll() {
         price: Number(b.price || 0),   // the finalized/invoiced amount — distinct from quote.total's estimate
         created_at: b.created_at,
         updated_at: b.updated_at,
+        submitted_at: b.submitted_at,
         quote
       };
     });
@@ -871,6 +925,73 @@ function pendingRowHtml(b) {
     <td><span class="${statusClass(b.status)}">${statusLabel(b.status)}</span></td>
     <td>${actionSelect(b)}</td>
   </tr>`;
+}
+
+// Documents confirm-booking.html can produce, in display order. "Tax Exemption
+// Certificate" only actually gets uploaded/required when the customer answered
+// tax_exempted = yes — shown here regardless so staff can see it's N/A, not
+// silently missing.
+const EXPECTED_DOC_TYPES = ['SSM', 'Company Bank Header', 'Event Proposal', 'Tax Exemption Certificate'];
+
+// Submitted-for-review card: company/e-Invoice details + documents + Accept/Reject.
+// Reject reuses the exact same inline reason box as inquiryRowHtml (rejectingId,
+// .reject-reason/.reject-confirm/.reject-cancel) — confirmReject() doesn't care
+// which status the booking is coming from.
+function submittedCardHtml(b) {
+  const quoteDetail = quoteDetailHtml(b.quote);
+  const docsByType = {};
+  b.documents.forEach(d => { docsByType[(d.doc_type || '').toLowerCase()] = d; });
+
+  const docsHtml = EXPECTED_DOC_TYPES
+    .filter(type => type !== 'Tax Exemption Certificate' || b.tax_exempted)
+    .map(type => {
+      const doc = docsByType[type.toLowerCase()];
+      const status = doc
+        ? `<button class="view-doc-btn" data-path="${escapeHtml(doc.file_url)}">View</button>`
+        : `<span class="review-doc-missing">Not uploaded</span>`;
+      return `<div class="review-doc"><span class="review-doc-name">${escapeHtml(type)}</span>${status}</div>`;
+    }).join('');
+
+  const actionCell = (rejectingId === b.id)
+    ? `<div class="reject-box">
+        <input class="reject-reason" data-id="${b.id}" type="text" placeholder="Reason for rejection (required)" />
+        <div class="reject-actions">
+          <button class="accept-btn danger reject-confirm" data-id="${b.id}">Confirm reject</button>
+          <button class="link-btn reject-cancel" data-id="${b.id}">Cancel</button>
+        </div>
+      </div>`
+    : `<div class="btn-row">
+        <button class="accept-submission-btn accept-btn" data-id="${b.id}">Accept</button>
+        <button class="reject-btn" data-id="${b.id}">Reject</button>
+      </div>`;
+
+  return `<div class="review-card">
+    <div class="review-head">
+      <div>
+        <h3>${escapeHtml(b.company) || '—'} <span class="quote-detail">${escapeHtml(b.customer)}</span></h3>
+        <span class="quote-detail">${escapeHtml(b.eventType)} · ${escapeHtml(b.hub)} / ${escapeHtml(b.space)} · ${escapeHtml(b.start_date)} → ${escapeHtml(b.end_date)}</span>
+      </div>
+      <div class="review-meta">
+        <span class="quote">${fmtMoney(b.quote.total)}</span><br>${quoteDetail}
+      </div>
+    </div>
+    <div class="review-grid">
+      <div class="review-field"><span class="label">Registration No.</span><span class="value">${escapeHtml(b.registration_no) || '—'}</span></div>
+      <div class="review-field"><span class="label">TIN</span><span class="value">${escapeHtml(b.tin_number) || '—'}</span></div>
+      <div class="review-field"><span class="label">SST No.</span><span class="value">${escapeHtml(b.sst_number) || '—'}</span></div>
+      <div class="review-field"><span class="label">MSIC Code</span><span class="value">${escapeHtml(b.msic_code) || '—'}</span></div>
+      <div class="review-field"><span class="label">Contact Person</span><span class="value">${escapeHtml(b.pic) || '—'}</span></div>
+      <div class="review-field"><span class="label">Contact Number</span><span class="value">${escapeHtml(b.phone) || '—'}</span></div>
+      <div class="review-field"><span class="label">Company Email</span><span class="value">${escapeHtml(b.email) || '—'}</span></div>
+      <div class="review-field"><span class="label">eInvoice Required?</span><span class="value">${b.einvoice_required ? 'Yes' : 'No'}</span></div>
+      <div class="review-field"><span class="label">Tax Exempted?</span><span class="value">${b.tax_exempted ? 'Yes' : 'No'}</span></div>
+    </div>
+    <div class="review-docs">
+      <p class="review-docs-title">Documents</p>
+      ${docsHtml}
+    </div>
+    ${actionCell}
+  </div>`;
 }
 
 function rowHtml(b) {
@@ -1232,6 +1353,7 @@ function switchTab(name) {
 const BOOKINGS_SUBTABS = [
   { key: 'inquiries', label: 'Incoming inquiries' },
   { key: 'pending', label: 'Pending' },
+  { key: 'submitted', label: 'Submitted' },
   { key: 'ongoing', label: 'Ongoing' },
   { key: 'all', label: 'All bookings' }
 ];
@@ -1240,7 +1362,7 @@ function updateBookingsSubTabUI() {
   document.querySelectorAll('#bookingsSubTabs .tab-btn').forEach(btn => {
     btn.classList.toggle('active', btn.getAttribute('data-subtab') === bookingsSubTab);
   });
-  ['Inquiries', 'Pending', 'Ongoing', 'All'].forEach(key => {
+  ['Inquiries', 'Pending', 'Submitted', 'Ongoing', 'All'].forEach(key => {
     document.getElementById('subtab' + key).classList.toggle('active', bookingsSubTab === key.toLowerCase());
   });
 }
@@ -1411,9 +1533,10 @@ function render() {
 
   const inquiries = filtered.filter(b => b.status === 'inquired');
   const pending = filtered.filter(b => b.status === 'pending');
+  const submitted = filtered.filter(b => b.status === 'submitted');
   const ongoing = filtered.filter(b => ['confirmed', 'completed', 'cancelled', 'rejected'].includes(b.status));
 
-  renderBookingsSubTabs({ inquiries: inquiries.length, pending: pending.length, ongoing: ongoing.length });
+  renderBookingsSubTabs({ inquiries: inquiries.length, pending: pending.length, submitted: submitted.length, ongoing: ongoing.length });
   document.getElementById('ongoingToggleLabel').textContent =
     'Ongoing bookings' + (ongoing.length ? ` (${ongoing.length})` : '');
   renderRevenueSubTabs();
@@ -1421,6 +1544,7 @@ function render() {
   // Metrics
   const totalInquiries = filtered.filter(b => b.status === 'inquired').length;
   const totalPending = filtered.filter(b => b.status === 'pending').length;
+  const totalSubmitted = filtered.filter(b => b.status === 'submitted').length;
   const totalConfirmed = filtered.filter(b => b.status === 'confirmed').length;
   const totalCompleted = filtered.filter(b => b.status === 'completed').length;
   const totalRejectedCancelled = filtered.filter(b => b.status === 'rejected' || b.status === 'cancelled').length;
@@ -1430,6 +1554,7 @@ function render() {
   document.getElementById('metrics').innerHTML = `
     <div class="metric-card"><p class="label">New inquiries</p><p class="value">${totalInquiries}</p></div>
     <div class="metric-card"><p class="label">Pending review</p><p class="value">${totalPending}</p></div>
+    <div class="metric-card"><p class="label">Submitted, awaiting review</p><p class="value">${totalSubmitted}</p></div>
     <div class="metric-card"><p class="label">Confirmed</p><p class="value">${totalConfirmed}</p></div>
     <div class="metric-card"><p class="label">Completed</p><p class="value">${totalCompleted}</p></div>
     <div class="metric-card"><p class="label">Rejected / Cancelled</p><p class="value">${totalRejectedCancelled}</p></div>
@@ -1456,6 +1581,17 @@ function render() {
   } else {
     pdTable.style.display = 'table'; pdEmpty.style.display = 'none';
     document.getElementById('pendingBody').innerHTML = pending.map(pendingRowHtml).join('');
+  }
+
+  // Submitted-for-review cards
+  const subEmpty = document.getElementById('submittedEmpty');
+  const subList = document.getElementById('submittedList');
+  if (submitted.length === 0) {
+    subList.style.display = 'none'; subEmpty.style.display = 'block';
+    subEmpty.textContent = 'No submissions awaiting review.';
+  } else {
+    subList.style.display = 'block'; subEmpty.style.display = 'none';
+    subList.innerHTML = submitted.map(submittedCardHtml).join('');
   }
 
   // Ongoing table
@@ -1544,11 +1680,17 @@ function attachActionHandlers() {
   });
 
   // Accept button on inquiries: inquired -> pending, then notify (best-effort).
-  document.querySelectorAll('.accept-btn:not(.reject-confirm)').forEach(btn => {
+  document.querySelectorAll('.accept-btn:not(.reject-confirm):not(.accept-submission-btn)').forEach(btn => {
     btn.addEventListener('click', (e) => acceptInquiry(e.target.getAttribute('data-id'), e.target));
   });
 
-  // Reject: open the inline reason box.
+  // Accept button on submitted-for-review cards: submitted -> confirmed.
+  document.querySelectorAll('.accept-submission-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => acceptSubmission(e.target.getAttribute('data-id'), e.target));
+  });
+
+  // Reject: open the inline reason box. Shared by inquiries and submitted-for-
+  // review cards — confirmReject() below doesn't care which status it came from.
   document.querySelectorAll('.reject-btn').forEach(btn => {
     btn.addEventListener('click', (e) => { rejectingId = e.target.getAttribute('data-id'); render(); });
   });
@@ -1565,6 +1707,25 @@ function attachActionHandlers() {
   // Read-only inquiry detail pop-out.
   document.querySelectorAll('.view-inquiry-btn').forEach(btn => {
     btn.addEventListener('click', (e) => openInquiryDetail(e.target.getAttribute('data-id')));
+  });
+
+  // View a submitted document: mint a signed URL on click, then open it.
+  document.querySelectorAll('.view-doc-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      const path = e.target.getAttribute('data-path');
+      e.target.disabled = true;
+      const originalText = e.target.textContent;
+      e.target.textContent = 'Loading…';
+      try {
+        const url = await getSignedDocUrl(path);
+        window.open(url, '_blank', 'noopener');
+      } catch (err) {
+        alert(err.message);
+      } finally {
+        e.target.disabled = false;
+        e.target.textContent = originalText;
+      }
+    });
   });
 }
 
@@ -1586,6 +1747,25 @@ async function acceptInquiry(bookingId, btn) {
   render();
 }
 
+// Accept a submitted-for-review booking: submitted -> confirmed. The leasing
+// agreement generation (Phase D) fires server-side off this same status
+// change, same pattern as acceptInquiry's Zapier notification above.
+async function acceptSubmission(bookingId, btn) {
+  const b = bookings.find(x => x.id === bookingId);
+  btn.disabled = true;
+  btn.textContent = 'Accepting…';
+  try {
+    await patchBooking(bookingId, { status: 'confirmed', reviewed_at: new Date().toISOString() });
+    if (b) b.status = 'confirmed';
+  } catch (err) {
+    alert('Could not confirm this booking: ' + err.message);
+    btn.disabled = false;
+    btn.textContent = 'Accept';
+    return;
+  }
+  render();
+}
+
 async function confirmReject(bookingId, btn) {
   const input = document.querySelector('.reject-reason[data-id="' + bookingId + '"]');
   const reason = ((input && input.value) || '').trim();
@@ -1602,7 +1782,7 @@ async function confirmReject(bookingId, btn) {
     rejectingId = null;
     render();
   } catch (err) {
-    alert('Could not reject inquiry: ' + err.message);
+    alert('Could not reject this booking: ' + err.message);
     btn.disabled = false;
     btn.textContent = 'Confirm reject';
   }
