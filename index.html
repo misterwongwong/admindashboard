@@ -36,15 +36,20 @@
      the header, since which hub you're looking at governs almost everything
      below it (not a minor toolbar option). */
   .hub-toolbar {
-    display: flex; align-items: center; flex-wrap: wrap; gap: 12px;
+    display: flex; align-items: flex-start; flex-wrap: wrap; gap: 12px;
     background: white; border: 1px solid #e6e6e1; border-radius: 10px;
     padding: 12px 14px; margin: 18px 0 14px;
   }
   .hub-toolbar-label {
     font-size: 12px; font-weight: 600; color: #6b6b66; text-transform: uppercase;
-    letter-spacing: 0.03em; white-space: nowrap;
+    letter-spacing: 0.03em; white-space: nowrap; padding-top: 8px;
   }
-  .hub-space-group { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex: 1; }
+  /* Stacked, not side-by-side: hub pills on top, space dropdown on its own
+     indented line below — reads as "space narrows within the selected hub"
+     rather than two independent, same-level filters. */
+  .hub-space-group { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; flex: 1; min-width: 200px; }
+  .space-subrow { display: flex; align-items: center; gap: 6px; padding-left: 20px; }
+  .space-subrow-arrow { color: #9a9a94; font-size: 12px; }
   /* Greyed out + non-interactive on the Customers tab, where hub/space don't
      apply (a customer can have bookings across multiple hubs) — see
      updateHubToolbarForTab() in the script below. */
@@ -256,7 +261,10 @@
     <span class="hub-toolbar-label">Viewing</span>
     <div class="hub-space-group" id="hubSpaceGroup">
       <div class="hub-filters" id="hubFilters"></div>
-      <select class="space-select" id="spaceFilterSelect"></select>
+      <div class="space-subrow">
+        <span class="space-subrow-arrow">↳</span>
+        <select class="space-select" id="spaceFilterSelect"></select>
+      </div>
     </div>
     <span class="hub-toolbar-note" id="hubToolbarNote">Not used on the Customers tab</span>
     <button class="refresh-btn" id="refreshBtn">↻ Refresh</button>
@@ -1496,6 +1504,8 @@ function render() {
   const totalInquiries = filtered.filter(b => b.status === 'inquired').length;
   const totalPending = filtered.filter(b => b.status === 'pending').length;
   const totalConfirmed = filtered.filter(b => b.status === 'confirmed').length;
+  const totalCompleted = filtered.filter(b => b.status === 'completed').length;
+  const totalRejectedCancelled = filtered.filter(b => b.status === 'rejected' || b.status === 'cancelled').length;
   const perf = activeHub === 'All hubs' ? perfRows : perfRows.filter(r => r.hub === activeHub);
   const revenue = perf.reduce((s, r) => s + Number(r.revenue || 0), 0);
 
@@ -1503,6 +1513,8 @@ function render() {
     <div class="metric-card"><p class="label">New inquiries</p><p class="value">${totalInquiries}</p></div>
     <div class="metric-card"><p class="label">Pending review</p><p class="value">${totalPending}</p></div>
     <div class="metric-card"><p class="label">Confirmed</p><p class="value">${totalConfirmed}</p></div>
+    <div class="metric-card"><p class="label">Completed</p><p class="value">${totalCompleted}</p></div>
+    <div class="metric-card"><p class="label">Rejected / Cancelled</p><p class="value">${totalRejectedCancelled}</p></div>
     <div class="metric-card"><p class="label">Revenue</p><p class="value">${fmtMoney(revenue)}</p></div>
   `;
 
