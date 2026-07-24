@@ -1,0 +1,1241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Casual Leasing Command Centre</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: #f4f5f3;
+    color: #1a1a1a;
+  }
+  .header { background: #0f6e56; color: white; padding: 26px 32px; }
+  .header h1 { margin: 0 0 4px; font-size: 25px; font-weight: 600; }
+  .header p { margin: 0; font-size: 13.5px; color: #d5efe7; max-width: 680px; }
+  .container { max-width: 1180px; margin: 0 auto; padding: 22px 32px 64px; }
+
+  .config-bar {
+    display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+    background: white; border: 1px solid #e6e6e1; border-radius: 10px;
+    padding: 12px; margin-bottom: 12px;
+  }
+  .config-bar input {
+    flex: 1; min-width: 200px; padding: 8px 10px; border: 1px solid #d8d8d3;
+    border-radius: 6px; font-size: 13px;
+  }
+  .config-bar button {
+    padding: 8px 16px; border-radius: 6px; border: none; background: #0f6e56;
+    color: white; font-size: 13px; cursor: pointer;
+  }
+  .status-msg { font-size: 13px; color: #6b6b66; margin: 0 0 18px; }
+
+  .toolbar { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin: 18px 0 14px; }
+  .hub-filters { display: flex; gap: 8px; flex-wrap: wrap; }
+  .hub-filters button {
+    border: 1px solid #d8d8d3; background: white; padding: 7px 13px;
+    border-radius: 20px; font-size: 13px; cursor: pointer; color: #333;
+  }
+  .hub-filters button.active { background: #0f6e56; border-color: #0f6e56; color: white; }
+  .refresh-btn { border: 1px solid #d8d8d3; background: white; padding: 7px 14px; border-radius: 6px; font-size: 13px; cursor: pointer; }
+
+  .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 26px; }
+  .metric-card { background: white; border: 1px solid #e6e6e1; border-radius: 10px; padding: 15px 18px; }
+  .metric-card p.label { margin: 0 0 6px; font-size: 11.5px; color: #6b6b66; text-transform: uppercase; letter-spacing: 0.03em; }
+  .metric-card p.value { margin: 0; font-size: 23px; font-weight: 600; }
+
+  .section-title { font-size: 16px; font-weight: 600; margin: 30px 0 6px; }
+  .section-sub { font-size: 13px; color: #6b6b66; margin: 0 0 12px; }
+
+  .card { background: white; border: 1px solid #e6e6e1; border-radius: 10px; overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; padding: 11px 14px; background: #f7f7f5; color: #6b6b66; font-weight: 500; border-bottom: 1px solid #e6e6e1; white-space: nowrap; }
+  td { padding: 11px 14px; border-bottom: 1px solid #f0f0ed; vertical-align: middle; }
+  tr:last-child td { border-bottom: none; }
+
+  .status-pill { display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 500; white-space: nowrap; }
+  .status-inquired { background: #e0ecfb; color: #1c5aa8; }
+  .status-pending { background: #fdf1cf; color: #8a6d1a; }
+  .status-confirmed { background: #fbdede; color: #a3312d; }
+  .status-completed { background: #dcefe4; color: #1f6b45; }
+  .status-cancelled { background: #eaeae7; color: #6b6b66; }
+
+  .quote { font-weight: 600; white-space: nowrap; }
+  .quote-detail { font-size: 11px; color: #9a9a94; font-weight: 400; }
+
+  .action-select { padding: 6px 8px; border: 1px solid #d8d8d3; border-radius: 6px; font-size: 12.5px; background: white; cursor: pointer; }
+  .accept-btn { padding: 7px 16px; border: none; border-radius: 6px; font-size: 12.5px; background: #0f6e56; color: white; cursor: pointer; font-weight: 500; }
+  .accept-btn:hover { background: #0c5a46; }
+  .accept-btn:disabled { background: #a9c9bf; cursor: default; }
+
+  .empty-state, .loading-state, .error-state { padding: 24px 14px; color: #6b6b66; font-size: 14px; }
+  .error-state { color: #a3312d; }
+
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: #6b6b66; margin: 8px 0 0; }
+  .legend span { display: inline-flex; align-items: center; gap: 5px; }
+  .legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+
+  .status-rejected { background: #f3d9d7; color: #8a2723; }
+
+  /* Accept / Reject controls on inquiry rows */
+  .btn-row { display: flex; gap: 6px; }
+  .reject-btn { padding: 7px 14px; border: 1px solid #d8a3a0; border-radius: 6px; font-size: 12.5px; background: white; color: #a3312d; cursor: pointer; font-weight: 500; }
+  .reject-btn:hover { background: #fbdede; }
+  .accept-btn.danger { background: #a3312d; }
+  .accept-btn.danger:hover { background: #8a2723; }
+  .reject-box { display: flex; flex-direction: column; gap: 6px; min-width: 190px; }
+  .reject-box input { padding: 6px 8px; border: 1px solid #d8d8d3; border-radius: 6px; font-size: 12.5px; }
+  .reject-actions { display: flex; gap: 6px; align-items: center; }
+  .link-btn { background: none; border: none; color: #6b6b66; font-size: 12.5px; cursor: pointer; text-decoration: underline; padding: 6px 4px; }
+
+  /* Webhook notification warning */
+  .notify-warn { display: block; margin-top: 6px; font-size: 11.5px; color: #a3312d; }
+  .resend-btn { margin-left: 6px; padding: 2px 9px; border: 1px solid #d8a3a0; border-radius: 5px; background: white; color: #a3312d; cursor: pointer; font-size: 11px; }
+  .resend-btn:hover { background: #fbdede; }
+
+  /* Space filter (extends the hub filter in the toolbar) */
+  .space-select { padding: 7px 10px; border: 1px solid #d8d8d3; border-radius: 6px; font-size: 13px; background: white; color: #333; cursor: pointer; }
+
+  /* All bookings — status pills + search, local to that section */
+  .ab-filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 12px; }
+  .status-filters { display: flex; gap: 8px; flex-wrap: wrap; }
+  .status-filters button {
+    border: 1px solid #d8d8d3; background: white; padding: 6px 12px;
+    border-radius: 20px; font-size: 12.5px; cursor: pointer; color: #333;
+  }
+  .status-filters button.active { background: #0f6e56; border-color: #0f6e56; color: white; }
+  .ab-search { flex: 1; min-width: 200px; max-width: 320px; padding: 7px 10px; border: 1px solid #d8d8d3; border-radius: 6px; font-size: 13px; }
+
+  #allBookingsTable th[data-sort] { cursor: pointer; user-select: none; }
+  #allBookingsTable th[data-sort]:hover { color: #333; }
+  .sort-arrow { font-size: 10px; color: #0f6e56; margin-left: 3px; display: inline-block; width: 8px; }
+
+  /* Revenue tab: hand-rolled bar chart, no charting library */
+  .revenue-trend { display: flex; align-items: flex-end; gap: 16px; min-height: 190px; padding: 8px 6px 0; overflow-x: auto; }
+  .revenue-trend .bar-col { display: flex; flex-direction: column; align-items: center; flex: 0 0 auto; min-width: 44px; }
+  .revenue-trend .bar { width: 100%; max-width: 40px; background: #0f6e56; border-radius: 4px 4px 0 0; }
+  .revenue-trend .bar-value { font-size: 11px; color: #333; margin-bottom: 4px; white-space: nowrap; }
+  .revenue-trend .bar-label { font-size: 11px; color: #6b6b66; margin-top: 6px; white-space: nowrap; }
+
+  /* Top-level Bookings / Revenue tab switcher */
+  .tabs { display: flex; gap: 22px; border-bottom: 1px solid #e6e6e1; margin: 4px 0 22px; }
+  .tab-btn {
+    border: none; background: none; padding: 10px 2px; margin-bottom: -1px;
+    font-size: 14.5px; font-weight: 600; color: #6b6b66; cursor: pointer;
+    border-bottom: 2px solid transparent;
+  }
+  .tab-btn:hover { color: #333; }
+  .tab-btn.active { color: #0f6e56; border-bottom-color: #0f6e56; }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  /* Customer detail pop-out */
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(20,20,18,0.45);
+    display: flex; align-items: center; justify-content: center;
+    padding: 24px; z-index: 100;
+  }
+  .modal-box {
+    background: white; border-radius: 12px; max-width: 540px; width: 100%;
+    max-height: 85vh; overflow-y: auto; padding: 24px 26px; position: relative;
+  }
+  .modal-box h3 { margin: 0 0 16px; font-size: 17px; }
+  .modal-close {
+    position: absolute; top: 14px; right: 16px; border: none; background: none;
+    font-size: 22px; line-height: 1; cursor: pointer; color: #9a9a94;
+  }
+  .modal-close:hover { color: #333; }
+  .modal-field { margin-bottom: 11px; font-size: 13.5px; }
+  .modal-field .field-label {
+    display: block; margin-bottom: 2px; font-size: 11px; color: #6b6b66;
+    text-transform: uppercase; letter-spacing: 0.03em;
+  }
+  .modal-bookings-table { width: 100%; border-collapse: collapse; font-size: 12.5px; margin-top: 6px; }
+  .modal-bookings-table th, .modal-bookings-table td { padding: 6px 8px; border-bottom: 1px solid #f0f0ed; text-align: left; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Casual Leasing Command Centre</h1>
+  <p>Staff view for reviewing inquiries, authorizing bookings, and tracking status across all hubs. Quotations are calculated live from weekday/weekend rates.</p>
+</div>
+
+<div class="container">
+
+  <div class="config-bar">
+    <input id="supaUrl" type="text" placeholder="Supabase Project URL (https://xxxx.supabase.co)" />
+    <input id="supaKey" type="text" placeholder="Supabase anon public key" />
+    <input id="zapierWebhook" type="text" placeholder="Zapier Catch Hook URL (optional — sent on Accept)" />
+    <button id="connectBtn">Connect</button>
+  </div>
+  <p class="status-msg" id="statusMsg">Enter your project URL and anon key, then click Connect. Saved in this browser only.</p>
+
+  <div class="metrics" id="metrics"></div>
+
+  <div class="toolbar">
+    <div class="hub-filters" id="hubFilters"></div>
+    <div style="display:flex; gap:10px; align-items:center;">
+      <select class="space-select" id="spaceFilterSelect"></select>
+      <button class="refresh-btn" id="refreshBtn">↻ Refresh</button>
+    </div>
+  </div>
+
+  <div class="tabs" id="mainTabs">
+    <button class="tab-btn active" data-tab="bookings">Bookings</button>
+    <button class="tab-btn" data-tab="revenue">Revenue</button>
+    <button class="tab-btn" data-tab="customers">Customers</button>
+  </div>
+
+  <div id="tabBookings" class="tab-panel active">
+
+  <p class="section-title">Incoming inquiries</p>
+  <p class="section-sub">New inquiries submitted by customers, awaiting review. Check the details, then Accept to authorize and move into the booking pipeline.</p>
+  <div class="card">
+    <table id="inquiryTable" style="display:none;">
+      <thead>
+        <tr><th>Company / Contact</th><th>Event type</th><th>Hub / Space</th><th>Dates</th><th>Duration</th><th>Quotation</th><th>Status</th><th>Action</th></tr>
+      </thead>
+      <tbody id="inquiryBody"></tbody>
+    </table>
+    <div id="inquiryEmpty" class="empty-state">Connect to load inquiries.</div>
+  </div>
+
+  <p class="section-title">Pending bookings</p>
+  <p class="section-sub">Accepted inquiries awaiting the customer's booking form and required documents. An email with the form + document checklist is sent on Accept (via your Zapier hook).</p>
+  <div class="card">
+    <table id="pendingTable" style="display:none;">
+      <thead>
+        <tr><th>Company / Contact</th><th>Event type</th><th>Hub / Space</th><th>Dates</th><th>Quotation</th><th>Status</th><th>Action</th></tr>
+      </thead>
+      <tbody id="pendingBody"></tbody>
+    </table>
+    <div id="pendingEmpty" class="empty-state">Connect to load pending bookings.</div>
+  </div>
+
+  <p class="section-title">Ongoing bookings</p>
+  <p class="section-sub">Confirmed, completed, cancelled and rejected bookings.</p>
+  <div class="card">
+    <table id="ongoingTable" style="display:none;">
+      <thead>
+        <tr><th>Customer</th><th>Hub / Space</th><th>Dates</th><th>Quotation</th><th>Status</th><th>Action</th></tr>
+      </thead>
+      <tbody id="ongoingBody"></tbody>
+    </table>
+    <div id="ongoingEmpty" class="empty-state">Connect to load bookings.</div>
+  </div>
+  <div class="legend">
+    <span><i style="background:#e0ecfb"></i>Inquiring</span>
+    <span><i style="background:#fdf1cf"></i>Pending</span>
+    <span><i style="background:#fbdede"></i>Confirmed</span>
+    <span><i style="background:#dcefe4"></i>Completed</span>
+    <span><i style="background:#eaeae7"></i>Cancelled</span>
+    <span><i style="background:#f3d9d7"></i>Rejected</span>
+  </div>
+
+  <p class="section-title">All bookings</p>
+  <p class="section-sub">Master booking database — every status, searchable, sortable. Hub/space filters above apply here too.</p>
+  <div class="ab-filters">
+    <div class="status-filters" id="statusFilters"></div>
+    <input class="ab-search" id="allBookingsSearch" type="text" placeholder="Search company, PIC, event type…" />
+  </div>
+  <div class="card">
+    <table id="allBookingsTable" style="display:none;">
+      <thead>
+        <tr>
+          <th data-sort="company">Company / PIC <span class="sort-arrow"></span></th>
+          <th data-sort="eventType">Event type <span class="sort-arrow"></span></th>
+          <th data-sort="hub">Hub <span class="sort-arrow"></span></th>
+          <th data-sort="space">Space <span class="sort-arrow"></span></th>
+          <th data-sort="start_date">Dates <span class="sort-arrow"></span></th>
+          <th data-sort="duration">Duration <span class="sort-arrow"></span></th>
+          <th data-sort="quote">Quotation <span class="sort-arrow"></span></th>
+          <th data-sort="status">Status <span class="sort-arrow"></span></th>
+          <th data-sort="created_at">Created <span class="sort-arrow"></span></th>
+          <th data-sort="updated_at">Last updated <span class="sort-arrow"></span></th>
+        </tr>
+      </thead>
+      <tbody id="allBookingsBody"></tbody>
+    </table>
+    <div id="allBookingsEmpty" class="empty-state">Connect to load bookings.</div>
+  </div>
+
+  </div>
+
+  <div id="tabRevenue" class="tab-panel">
+
+  <p class="section-title">Revenue</p>
+  <p class="section-sub">Based on confirmed and completed bookings. The hub filter above applies here too.</p>
+
+  <div class="metrics" id="revenueSummary"></div>
+
+  <p class="section-sub" style="margin-top:18px;">Monthly trend — confirmed + completed bookings, by start date</p>
+  <div class="card" style="padding:16px 18px;">
+    <div id="revenueTrend" class="revenue-trend"></div>
+    <div id="revenueTrendEmpty" class="empty-state" style="display:none;">No revenue data yet.</div>
+  </div>
+
+  <p class="section-sub" style="margin-top:18px;">Breakdown by hub &amp; space</p>
+  <div class="card">
+    <table id="perfTable" style="display:none;">
+      <thead>
+        <tr><th>Hub</th><th>Space</th><th>Total bookings</th><th>Confirmed</th><th>Revenue</th><th>Avg / booking</th></tr>
+      </thead>
+      <tbody id="perfBody"></tbody>
+    </table>
+    <div id="perfEmpty" class="empty-state">Connect to load revenue data.</div>
+  </div>
+
+  </div>
+
+  <div id="tabCustomers" class="tab-panel">
+
+  <p class="section-title">Customers</p>
+  <p class="section-sub">Every customer's contact, registration and billing details, with their full booking history. Not affected by the hub/space filter above.</p>
+  <div class="ab-filters">
+    <input class="ab-search" id="customerSearch" type="text" placeholder="Search company, PIC, email…" />
+  </div>
+  <div class="card">
+    <table id="customersTable" style="display:none;">
+      <thead>
+        <tr><th>Company / PIC</th><th>Email</th><th>Phone</th><th>Total bookings</th><th>Total revenue</th><th>Last activity</th><th>SST</th><th>Action</th></tr>
+      </thead>
+      <tbody id="customersBody"></tbody>
+    </table>
+    <div id="customersEmpty" class="empty-state">Connect to load customers.</div>
+  </div>
+
+  </div>
+
+</div>
+
+<div id="customerModal" class="modal-overlay" style="display:none;">
+  <div class="modal-box">
+    <button class="modal-close" id="customerModalClose" aria-label="Close">&times;</button>
+    <div id="customerModalBody"></div>
+  </div>
+</div>
+
+<div id="inquiryModal" class="modal-overlay" style="display:none;">
+  <div class="modal-box">
+    <button class="modal-close" id="inquiryModalClose" aria-label="Close">&times;</button>
+    <div id="inquiryModalBody"></div>
+  </div>
+</div>
+
+<script>
+let SUPA_URL = '';
+let SUPA_KEY = '';
+let ZAPIER_WEBHOOK = '';
+let bookings = [];      // full booking rows joined with space + hub + customer + rates
+let perfRows = [];
+let customers = [];      // one row per customer, with their own bookings nested — for the Customers tab
+let customerSearchQuery = '';
+let activeHub = 'All hubs';
+let activeSpace = 'All spaces';
+let currentTab = 'bookings';   // 'bookings' | 'revenue' — purely a display toggle, render() still updates both
+let rejectingId = null;         // inquiry id currently showing the inline reject-reason box
+const notifyPayloads = {};      // bookingId -> payload, present only while a webhook send is outstanding/failed
+
+const STATUS_FLOW = ['inquired', 'pending', 'confirmed', 'completed', 'cancelled', 'rejected'];
+
+// "All bookings" master table state — independent of the section-specific tables above.
+const activeStatuses = new Set();   // empty = show every status
+let searchQuery = '';
+let sortState = { col: 'created_at', dir: 'desc' };
+
+const ALL_BOOKINGS_COLUMNS = {
+  company:    b => (b.company || b.customer || '').toLowerCase(),
+  eventType:  b => (b.eventType || '').toLowerCase(),
+  hub:        b => (b.hub || '').toLowerCase(),
+  space:      b => (b.space || '').toLowerCase(),
+  start_date: b => b.start_date || '',
+  duration:   b => b.duration || 0,
+  quote:      b => b.quote.total || 0,
+  status:     b => b.status || '',
+  created_at: b => b.created_at || '',
+  updated_at: b => b.updated_at || ''
+};
+
+function fmtMoney(n) { return 'RM ' + Number(n || 0).toLocaleString(); }
+function statusClass(s) { return 'status-pill status-' + (s || ''); }
+// timestamptz columns come back as full ISO strings — trim to the date, matching
+// how start_date/end_date (plain date columns) already print elsewhere.
+function fmtDate(iso) { return iso ? iso.slice(0, 10) : '—'; }
+
+// Count weekday vs weekend days between two dates (inclusive) and compute quote
+function calcQuote(startDate, endDate, weekdayRate, weekendRate) {
+  if (!startDate || !endDate) return { total: 0, weekdays: 0, weekends: 0 };
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  let weekdays = 0, weekends = 0;
+  const cur = new Date(start);
+  while (cur <= end) {
+    const day = cur.getDay(); // 0=Sun, 6=Sat
+    if (day === 0 || day === 6) weekends++;
+    else weekdays++;
+    cur.setDate(cur.getDate() + 1);
+  }
+  const wr = Number(weekdayRate || 0);
+  const we = Number(weekendRate || 0);
+  return { total: (weekdays * wr) + (weekends * we), weekdays, weekends };
+}
+
+async function apiGet(path) {
+  const res = await fetch(SUPA_URL + '/rest/v1/' + path, {
+    headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY }
+  });
+  if (!res.ok) {
+    // PostgREST always puts the real reason (message/details/hint) in the body —
+    // surface it instead of just the status code, or every failure looks the same.
+    let detail = '';
+    try {
+      const body = await res.json();
+      detail = body.message || body.hint || body.details || JSON.stringify(body);
+    } catch (e) { /* body wasn't JSON — fall back to status only */ }
+    throw new Error(res.status + (detail ? ': ' + detail : ''));
+  }
+  return res.json();
+}
+
+async function patchBooking(bookingId, fields) {
+  const res = await fetch(SUPA_URL + '/rest/v1/bookings?id=eq.' + bookingId, {
+    method: 'PATCH',
+    headers: {
+      apikey: SUPA_KEY,
+      Authorization: 'Bearer ' + SUPA_KEY,
+      'Content-Type': 'application/json',
+      Prefer: 'return=minimal'
+    },
+    body: JSON.stringify(fields)
+  });
+  if (!res.ok) throw new Error('Update failed: ' + res.status);
+}
+
+// Kept for the status-change dropdown on ongoing/pending rows.
+function updateBookingStatus(bookingId, newStatus) {
+  return patchBooking(bookingId, { status: newStatus });
+}
+
+// Append-only audit trail of what we notified about each booking.
+async function insertNotificationLog(bookingId, event, payload) {
+  const res = await fetch(SUPA_URL + '/rest/v1/notification_log', {
+    method: 'POST',
+    headers: {
+      apikey: SUPA_KEY,
+      Authorization: 'Bearer ' + SUPA_KEY,
+      'Content-Type': 'application/json',
+      Prefer: 'return=minimal'
+    },
+    body: JSON.stringify({ booking_id: bookingId, event: event, payload: payload })
+  });
+  if (!res.ok) throw new Error('Log failed: ' + res.status);
+}
+
+// Everything Zapier's email template needs, so it doesn't have to look anything up.
+function buildNotifyPayload(b) {
+  return {
+    booking_id: b.id,
+    pic_name: b.pic || b.customer,
+    company: b.company,
+    email: b.email,
+    phone: b.phone,
+    event_type: b.eventType,
+    hub: b.hub,
+    space: b.space,
+    start_date: b.start_date,
+    end_date: b.end_date,
+    duration_days: b.duration,
+    quotation_total: b.quote.total,
+    currency: 'MYR'
+  };
+}
+
+// POST the payload to the Zapier Catch Hook. Returns true/false — never throws,
+// so a failed notification can never roll back the booking status change.
+async function sendWebhook(payload) {
+  if (!ZAPIER_WEBHOOK) return false;
+  try {
+    const res = await fetch(ZAPIER_WEBHOOK, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    return res.ok;
+  } catch (e) {
+    // Network error or CORS block — treated as a failed send so staff can retry.
+    return false;
+  }
+}
+
+async function loadAll() {
+  const statusMsg = document.getElementById('statusMsg');
+  statusMsg.textContent = 'Loading...';
+  try {
+    // Pull bookings with nested space (incl rates), hub, and customer details.
+    // preferred_hub/preferred_space use disambiguation hints (same issue as
+    // spaces!space_id below) since bookings has more than one FK path to both
+    // hubs and spaces (space_id/preferred_space_id, and preferred_hub_id has
+    // no confirmed-hub counterpart column but still needs the hint to resolve).
+    const bookingData = await apiGet(
+      'bookings?select=id,start_date,end_date,status,purpose,price,created_at,updated_at,' +
+      'spaces!space_id(name,weekday_price,weekend_price,hubs(name)),' +
+      'preferred_hub:hubs!preferred_hub_id(name),' +
+      'preferred_space:spaces!preferred_space_id(name),' +
+      'customers(name,company,email,phone,address,registration_no,sst_number,sst_registered,notes)' +
+      '&order=created_at.desc'
+    );
+    bookings = bookingData.map(b => {
+      const space = b.spaces || {};
+      const hub = space.hubs || {};
+      const cust = b.customers || {};
+      const quote = calcQuote(b.start_date, b.end_date, space.weekday_price, space.weekend_price);
+      const duration = (b.start_date && b.end_date)
+        ? (quote.weekdays + quote.weekends) : 0;
+      return {
+        id: b.id,
+        customer: cust.name || '—',
+        company: cust.company || '',
+        pic: cust.name || '',
+        email: cust.email || '',
+        phone: cust.phone || '',
+        address: cust.address || '',
+        registration_no: cust.registration_no || '',
+        sst_number: cust.sst_number || '',
+        sst_registered: !!cust.sst_registered,
+        notes: cust.notes || '',
+        eventType: b.purpose || '—',
+        hub: hub.name || '—',
+        space: space.name || '—',
+        preferredHub: (b.preferred_hub && b.preferred_hub.name) || '',
+        preferredSpace: (b.preferred_space && b.preferred_space.name) || '',
+        start_date: b.start_date,
+        end_date: b.end_date,
+        duration,
+        status: b.status,
+        price: Number(b.price || 0),   // the finalized/invoiced amount — distinct from quote.total's estimate
+        created_at: b.created_at,
+        updated_at: b.updated_at,
+        quote
+      };
+    });
+
+    perfRows = await apiGet('v_space_performance?select=*');
+    await loadCustomers();
+
+    statusMsg.textContent = 'Connected — ' + bookings.length + ' bookings loaded.';
+    renderHubFilters();
+    renderSpaceFilter();
+    renderStatusFilterPills();
+    render();
+  } catch (err) {
+    statusMsg.textContent = 'Could not load: ' + err.message;
+  }
+}
+
+// One row per customer, with their own booking history nested — a single round
+// trip instead of matching customer_id against the main `bookings` array.
+// spaces!space_id(...) uses the same disambiguation hint as the main bookings
+// query, since bookings has more than one FK path to spaces (space_id vs
+// preferred_space_id) and PostgREST can't guess which one to embed otherwise.
+async function loadCustomers() {
+  try {
+    customers = await apiGet(
+      'customers?select=id,name,company,email,phone,address,registration_no,sst_number,sst_registered,notes,created_at,bookings(status,price,start_date,end_date,purpose,spaces!space_id(name,hubs(name)))&order=name.asc'
+    );
+  } catch (err) {
+    // Non-fatal — the Bookings/Revenue tabs don't depend on this, so a failure
+    // here shouldn't block the rest of the dashboard from loading.
+    customers = [];
+    const empty = document.getElementById('customersEmpty');
+    if (empty) empty.textContent = 'Could not load customers: ' + err.message;
+  }
+}
+
+function connect() {
+  SUPA_URL = document.getElementById('supaUrl').value.trim().replace(/\/$/, '');
+  SUPA_KEY = document.getElementById('supaKey').value.trim();
+  ZAPIER_WEBHOOK = document.getElementById('zapierWebhook').value.trim();
+  if (!SUPA_URL || !SUPA_KEY) {
+    document.getElementById('statusMsg').textContent = 'Enter both the project URL and anon key.';
+    return;
+  }
+  localStorage.setItem('cl_supabase_url', SUPA_URL);
+  localStorage.setItem('cl_supabase_key', SUPA_KEY);
+  localStorage.setItem('cl_zapier_webhook', ZAPIER_WEBHOOK);
+  loadAll();
+}
+
+function renderHubFilters() {
+  const hubs = ['All hubs', ...new Set(bookings.map(b => b.hub).filter(h => h && h !== '—'))];
+  const container = document.getElementById('hubFilters');
+  container.innerHTML = hubs.map(h =>
+    `<button data-hub="${h}" class="${h === activeHub ? 'active' : ''}">${h}</button>`
+  ).join('');
+  container.querySelectorAll('button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      activeHub = btn.getAttribute('data-hub');
+      activeSpace = 'All spaces';   // space list is hub-scoped — reset when hub changes
+      renderHubFilters();
+      renderSpaceFilter();
+      render();
+    });
+  });
+}
+
+// Space options are scoped to the currently selected hub, so this rebuilds
+// whenever the hub changes. The <select> element itself is static in the HTML
+// (its 'change' listener is attached once, at the bottom of this script) —
+// only its <option> children are replaced here.
+function renderSpaceFilter() {
+  const hubBookings = activeHub === 'All hubs' ? bookings : bookings.filter(b => b.hub === activeHub);
+  const spaces = ['All spaces', ...new Set(hubBookings.map(b => b.space).filter(s => s && s !== '—'))];
+  if (!spaces.includes(activeSpace)) activeSpace = 'All spaces';
+  document.getElementById('spaceFilterSelect').innerHTML = spaces.map(s =>
+    `<option value="${s}" ${s === activeSpace ? 'selected' : ''}>${s}</option>`
+  ).join('');
+}
+
+// Status filter pills for the "All bookings" table — multiple can be active at
+// once (e.g. confirmed + completed together). Empty selection = show all.
+function renderStatusFilterPills() {
+  const container = document.getElementById('statusFilters');
+  const allActive = activeStatuses.size === 0;
+  const chips = [`<button data-status="__all__" class="${allActive ? 'active' : ''}">All statuses</button>`]
+    .concat(STATUS_FLOW.map(s =>
+      `<button data-status="${s}" class="${activeStatuses.has(s) ? 'active' : ''}">${statusLabel(s)}</button>`
+    ));
+  container.innerHTML = chips.join('');
+  container.querySelectorAll('button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const s = btn.getAttribute('data-status');
+      if (s === '__all__') activeStatuses.clear();
+      else if (activeStatuses.has(s)) activeStatuses.delete(s);
+      else activeStatuses.add(s);
+      renderStatusFilterPills();
+      render();
+    });
+  });
+}
+
+// Friendlier display label — DB value stays the same
+function statusLabel(s) {
+  if (s === 'inquired') return 'Inquiring';
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : '';
+}
+
+function actionSelect(booking) {
+  // Offer valid next statuses the staff can move this booking to
+  const options = STATUS_FLOW
+    .filter(s => s !== booking.status)
+    .map(s => `<option value="${s}">Set to ${statusLabel(s)}</option>`)
+    .join('');
+  return `<select class="action-select" data-id="${booking.id}">
+    <option value="">Change status…</option>${options}</select>`;
+}
+
+// Inquiry rows: full detail + Accept / Reject. Reject swaps in an inline
+// required-reason box (tracked by rejectingId) instead of submitting immediately.
+function inquiryRowHtml(b) {
+  const quoteDetail = (b.quote.weekdays || b.quote.weekends)
+    ? `<span class="quote-detail">${b.quote.weekdays} wkdy + ${b.quote.weekends} wknd</span>` : '';
+  const actionCell = (rejectingId === b.id)
+    ? `<div class="reject-box">
+        <input class="reject-reason" data-id="${b.id}" type="text" placeholder="Reason for rejection (required)" />
+        <div class="reject-actions">
+          <button class="accept-btn danger reject-confirm" data-id="${b.id}">Confirm reject</button>
+          <button class="link-btn reject-cancel" data-id="${b.id}">Cancel</button>
+        </div>
+      </div>`
+    : `<div class="btn-row">
+        <button class="accept-btn" data-id="${b.id}">Accept</button>
+        <button class="reject-btn" data-id="${b.id}">Reject</button>
+        <button class="link-btn view-inquiry-btn" data-id="${b.id}">View details</button>
+      </div>`;
+  return `<tr>
+    <td>${b.company || '—'}<br><span class="quote-detail">${b.customer}</span></td>
+    <td>${b.eventType}</td>
+    <td>${b.hub}<br><span class="quote-detail">${b.space}</span></td>
+    <td>${b.start_date} → ${b.end_date}</td>
+    <td>${b.duration} day${b.duration === 1 ? '' : 's'}</td>
+    <td><span class="quote">${fmtMoney(b.quote.total)}</span><br>${quoteDetail}</td>
+    <td><span class="${statusClass(b.status)}">${statusLabel(b.status)}</span></td>
+    <td>${actionCell}</td>
+  </tr>`;
+}
+
+// Pending rows: accepted inquiries awaiting form + docs. Shows the status-change
+// dropdown, plus a notification-failed warning + Resend if the webhook didn't land.
+function pendingRowHtml(b) {
+  const quoteDetail = (b.quote.weekdays || b.quote.weekends)
+    ? `<span class="quote-detail">${b.quote.weekdays} wkdy + ${b.quote.weekends} wknd</span>` : '';
+  const warn = notifyPayloads[b.id]
+    ? `<span class="notify-warn">Accepted — notification failed.<button class="resend-btn" data-id="${b.id}">Resend</button></span>`
+    : '';
+  return `<tr>
+    <td>${b.company || '—'}<br><span class="quote-detail">${b.customer}</span></td>
+    <td>${b.eventType}</td>
+    <td>${b.hub}<br><span class="quote-detail">${b.space}</span></td>
+    <td>${b.start_date} → ${b.end_date}</td>
+    <td><span class="quote">${fmtMoney(b.quote.total)}</span><br>${quoteDetail}</td>
+    <td><span class="${statusClass(b.status)}">${statusLabel(b.status)}</span></td>
+    <td>${actionSelect(b)}${warn}</td>
+  </tr>`;
+}
+
+function rowHtml(b) {
+  const quoteDetail = (b.quote.weekdays || b.quote.weekends)
+    ? `<span class="quote-detail">${b.quote.weekdays} wkdy + ${b.quote.weekends} wknd</span>` : '';
+  return `<tr>
+    <td>${b.customer}${b.company ? '<br><span class="quote-detail">' + b.company + '</span>' : ''}</td>
+    <td>${b.hub}<br><span class="quote-detail">${b.space}</span></td>
+    <td>${b.start_date} → ${b.end_date}</td>
+    <td><span class="quote">${fmtMoney(b.quote.total)}</span><br>${quoteDetail}</td>
+    <td><span class="${statusClass(b.status)}">${statusLabel(b.status)}</span></td>
+    <td>${actionSelect(b)}</td>
+  </tr>`;
+}
+
+// All-bookings row: every column, no per-row actions (this table is for
+// browsing/searching the full history, not for workflow transitions).
+function allBookingRowHtml(b) {
+  const quoteDetail = (b.quote.weekdays || b.quote.weekends)
+    ? `<span class="quote-detail">${b.quote.weekdays} wkdy + ${b.quote.weekends} wknd</span>` : '';
+  return `<tr>
+    <td>${b.company || '—'}<br><span class="quote-detail">${b.customer}</span></td>
+    <td>${b.eventType}</td>
+    <td>${b.hub}</td>
+    <td>${b.space}</td>
+    <td>${b.start_date} → ${b.end_date}</td>
+    <td>${b.duration} day${b.duration === 1 ? '' : 's'}</td>
+    <td><span class="quote">${fmtMoney(b.quote.total)}</span><br>${quoteDetail}</td>
+    <td><span class="${statusClass(b.status)}">${statusLabel(b.status)}</span></td>
+    <td>${fmtDate(b.created_at)}</td>
+    <td>${fmtDate(b.updated_at)}</td>
+  </tr>`;
+}
+
+// Applies hub/space (shared with the rest of the dashboard), status pills,
+// free-text search, and sort — independently of the section-specific tables.
+function computeAllBookingsFiltered() {
+  let rows = bookings.slice();
+  if (activeHub !== 'All hubs') rows = rows.filter(b => b.hub === activeHub);
+  if (activeSpace !== 'All spaces') rows = rows.filter(b => b.space === activeSpace);
+  if (activeStatuses.size > 0) rows = rows.filter(b => activeStatuses.has(b.status));
+
+  const q = searchQuery.trim().toLowerCase();
+  if (q) {
+    rows = rows.filter(b =>
+      (b.company || '').toLowerCase().includes(q) ||
+      (b.customer || '').toLowerCase().includes(q) ||
+      (b.eventType || '').toLowerCase().includes(q)
+    );
+  }
+
+  const getSortValue = ALL_BOOKINGS_COLUMNS[sortState.col] || ALL_BOOKINGS_COLUMNS.created_at;
+  rows.sort((a, b) => {
+    const av = getSortValue(a), bv = getSortValue(b);
+    if (av < bv) return sortState.dir === 'asc' ? -1 : 1;
+    if (av > bv) return sortState.dir === 'asc' ? 1 : -1;
+    return 0;
+  });
+  return rows;
+}
+
+// Reflects sortState on the clickable column headers (listeners attached once,
+// at the bottom of this script — this only updates the ▲/▼ indicator text).
+function updateSortArrows() {
+  document.querySelectorAll('#allBookingsTable th[data-sort]').forEach(th => {
+    const arrow = th.querySelector('.sort-arrow');
+    if (!arrow) return;
+    arrow.textContent = th.getAttribute('data-sort') === sortState.col
+      ? (sortState.dir === 'asc' ? '▲' : '▼') : '';
+  });
+}
+
+// Groups confirmed+completed bookings by start-date month, summing `price` —
+// the same finalized-amount field v_space_performance uses for `revenue`, so
+// this trend adds up to the same totals as the cards/table above it.
+function computeMonthlyRevenue(rows) {
+  const byMonth = {};
+  rows
+    .filter(b => (b.status === 'confirmed' || b.status === 'completed') && b.start_date)
+    .forEach(b => {
+      const month = b.start_date.slice(0, 7); // 'YYYY-MM'
+      byMonth[month] = (byMonth[month] || 0) + b.price;
+    });
+  return Object.keys(byMonth).sort().map(month => ({ month, total: byMonth[month] }));
+}
+
+// Bookings whose price actually counts as revenue — confirmed + completed,
+// matching v_space_performance's own FILTER clause. Used to fix the average
+// calculations below: the view's confirmed_bookings column counts ONLY
+// 'confirmed' status, while its revenue sums confirmed+completed — dividing
+// one by the other overstates the average wherever completed bookings exist.
+function isRevenueBooking(b) { return b.status === 'confirmed' || b.status === 'completed'; }
+
+// Per hub+space counts of revenue-bookings, keyed the same way perf rows are
+// (hub name + space name) so each breakdown row can look up its own count.
+function revenueBookingCounts(rows) {
+  const counts = {};
+  rows.filter(isRevenueBooking).forEach(b => {
+    const key = b.hub + '|' + b.space;
+    counts[key] = (counts[key] || 0) + 1;
+  });
+  return counts;
+}
+
+function monthLabel(ym) {
+  const [y, m] = ym.split('-');
+  return new Date(Number(y), Number(m) - 1, 1).toLocaleDateString(undefined, { month: 'short', year: '2-digit' });
+}
+
+// rows should already be hub-filtered (the `filtered` array render() builds).
+function renderRevenueTrend(rows) {
+  const data = computeMonthlyRevenue(rows);
+  const container = document.getElementById('revenueTrend');
+  const empty = document.getElementById('revenueTrendEmpty');
+  if (data.length === 0) {
+    container.style.display = 'none'; empty.style.display = 'block';
+    return;
+  }
+  container.style.display = 'flex'; empty.style.display = 'none';
+  const maxBarHeight = 140; // px
+  const max = Math.max(...data.map(d => d.total), 1);
+  container.innerHTML = data.map(d => {
+    const h = Math.max((d.total / max) * maxBarHeight, 4); // keep a sliver visible even at RM 0
+    return `<div class="bar-col">
+      <span class="bar-value">${fmtMoney(d.total)}</span>
+      <div class="bar" style="height:${h}px;"></div>
+      <span class="bar-label">${monthLabel(d.month)}</span>
+    </div>`;
+  }).join('');
+}
+
+// perf and filtered should both already be hub-filtered (the arrays render()
+// builds from perfRows and bookings respectively, using the same activeHub).
+function renderRevenueSummary(perf, filtered) {
+  const revenue = perf.reduce((s, r) => s + Number(r.revenue || 0), 0);
+  // Denominator must match what's actually inside `revenue` (confirmed+completed),
+  // not perf's confirmed_bookings column, which counts 'confirmed' status only.
+  const revenueCount = filtered.filter(isRevenueBooking).length;
+  const avgValue = revenueCount > 0 ? revenue / revenueCount : 0;
+  document.getElementById('revenueSummary').innerHTML = `
+    <div class="metric-card"><p class="label">Total revenue</p><p class="value">${fmtMoney(revenue)}</p></div>
+    <div class="metric-card"><p class="label">Confirmed + completed</p><p class="value">${revenueCount}</p></div>
+    <div class="metric-card"><p class="label">Average booking value</p><p class="value">${fmtMoney(avgValue)}</p></div>
+  `;
+}
+
+// One row per customer. isRevenueBooking/fmtMoney/fmtDate are the same helpers
+// already used on the Revenue tab — same confirmed+completed definition, not
+// reinvented here.
+function customerRowHtml(c) {
+  const custBookings = c.bookings || [];
+  const totalBookings = custBookings.length;
+  const totalRevenue = custBookings.filter(isRevenueBooking).reduce((s, b) => s + Number(b.price || 0), 0);
+  const lastActivity = custBookings.reduce((latest, b) => {
+    return (b.start_date && (!latest || b.start_date > latest)) ? b.start_date : latest;
+  }, null) || c.created_at;
+  const sst = c.sst_registered ? (c.sst_number || 'Registered') : '—';
+  return `<tr>
+    <td>${c.company || '—'}<br><span class="quote-detail">${c.name || '—'}</span></td>
+    <td>${c.email || '—'}</td>
+    <td>${c.phone || '—'}</td>
+    <td>${totalBookings}</td>
+    <td>${fmtMoney(totalRevenue)}</td>
+    <td>${fmtDate(lastActivity)}</td>
+    <td>${sst}</td>
+    <td><button class="link-btn view-customer-btn" data-id="${c.id}">View details</button></td>
+  </tr>`;
+}
+
+// Deliberately ignores activeHub/activeSpace — a customer can have bookings
+// across multiple hubs, so filtering the customer list by hub doesn't apply.
+function computeCustomersFiltered() {
+  const q = customerSearchQuery.trim().toLowerCase();
+  if (!q) return customers;
+  return customers.filter(c =>
+    (c.company || '').toLowerCase().includes(q) ||
+    (c.name || '').toLowerCase().includes(q) ||
+    (c.email || '').toLowerCase().includes(q)
+  );
+}
+
+function renderCustomersTab() {
+  const rows = computeCustomersFiltered();
+  const table = document.getElementById('customersTable');
+  const empty = document.getElementById('customersEmpty');
+  if (rows.length === 0) {
+    table.style.display = 'none'; empty.style.display = 'block';
+    empty.textContent = customers.length === 0 ? 'Connect to load customers.' : 'No customers match this search.';
+  } else {
+    table.style.display = 'table'; empty.style.display = 'none';
+    document.getElementById('customersBody').innerHTML = rows.map(customerRowHtml).join('');
+  }
+  document.querySelectorAll('.view-customer-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => openCustomerDetail(e.target.getAttribute('data-id')));
+  });
+}
+
+// Populates and opens the single shared modal element — not per-row markup.
+function openCustomerDetail(customerId) {
+  const c = customers.find(x => x.id === customerId);
+  if (!c) return;
+
+  const history = (c.bookings || []).slice().sort((a, b) => (b.start_date || '').localeCompare(a.start_date || ''));
+  const rowsHtml = history.length
+    ? history.map(b => {
+        const space = b.spaces || {};
+        const hub = space.hubs || {};
+        return `<tr>
+          <td>${hub.name || '—'}</td>
+          <td>${space.name || '—'}</td>
+          <td>${b.start_date || '—'} → ${b.end_date || '—'}</td>
+          <td><span class="${statusClass(b.status)}">${statusLabel(b.status)}</span></td>
+          <td>${fmtMoney(b.price)}</td>
+        </tr>`;
+      }).join('')
+    : `<tr><td colspan="5" style="color:#6b6b66;">No bookings yet.</td></tr>`;
+
+  document.getElementById('customerModalBody').innerHTML = `
+    <h3>${c.company || c.name || 'Customer'}</h3>
+    <div class="modal-field"><span class="field-label">PIC</span>${c.name || '—'}</div>
+    <div class="modal-field"><span class="field-label">Email</span>${c.email || '—'}</div>
+    <div class="modal-field"><span class="field-label">Phone</span>${c.phone || '—'}</div>
+    <div class="modal-field"><span class="field-label">Address</span>${c.address || '—'}</div>
+    <div class="modal-field"><span class="field-label">Registration no.</span>${c.registration_no || '—'}</div>
+    <div class="modal-field"><span class="field-label">SST</span>${c.sst_registered ? (c.sst_number || 'Registered, no. on file') : 'Not registered'}</div>
+    <div class="modal-field"><span class="field-label">Notes</span>${c.notes || '—'}</div>
+    <div class="modal-field"><span class="field-label">Customer since</span>${fmtDate(c.created_at)}</div>
+    <div class="modal-field">
+      <span class="field-label">Booking history</span>
+      <table class="modal-bookings-table">
+        <thead><tr><th>Hub</th><th>Space</th><th>Dates</th><th>Status</th><th>Price</th></tr></thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>
+    </div>
+  `;
+  document.getElementById('customerModal').style.display = 'flex';
+}
+
+function closeCustomerModal() {
+  document.getElementById('customerModal').style.display = 'none';
+}
+
+// Single reusable modal driven by bookingId — same pattern as how rejectingId
+// already drives the inline reject box, just for a read-only detail view.
+function openInquiryDetail(bookingId) {
+  const b = bookings.find(x => x.id === bookingId);
+  if (!b) return;
+
+  const quoteBreakdown = (b.quote.weekdays || b.quote.weekends)
+    ? `${b.quote.weekdays} weekday day(s) + ${b.quote.weekends} weekend day(s) = ${fmtMoney(b.quote.total)}`
+    : fmtMoney(b.quote.total);
+  const sst = b.sst_registered ? (b.sst_number || 'Registered, no. on file') : 'Not registered';
+
+  document.getElementById('inquiryModalBody').innerHTML = `
+    <h3>${b.company || b.customer || 'Inquiry'}</h3>
+    <div class="modal-field"><span class="field-label">PIC</span>${b.customer || '—'}</div>
+    <div class="modal-field"><span class="field-label">Company</span>${b.company || '—'}</div>
+    <div class="modal-field"><span class="field-label">Email</span>${b.email || '—'}</div>
+    <div class="modal-field"><span class="field-label">Phone</span>${b.phone || '—'}</div>
+    <div class="modal-field"><span class="field-label">Event type</span>${b.eventType || '—'}</div>
+    <div class="modal-field"><span class="field-label">Requested hub / space</span>${b.preferredHub || '—'} / ${b.preferredSpace || '—'}</div>
+    <div class="modal-field"><span class="field-label">Confirmed hub / space</span>${b.hub} / ${b.space}</div>
+    <div class="modal-field"><span class="field-label">Dates</span>${b.start_date} → ${b.end_date} (${b.duration} day${b.duration === 1 ? '' : 's'})</div>
+    <div class="modal-field"><span class="field-label">Quotation</span>${quoteBreakdown}</div>
+    <div class="modal-field"><span class="field-label">Address</span>${b.address || '—'}</div>
+    <div class="modal-field"><span class="field-label">Registration no.</span>${b.registration_no || '—'}</div>
+    <div class="modal-field"><span class="field-label">SST</span>${sst}</div>
+    <div class="modal-field"><span class="field-label">Notes</span>${b.notes || '—'}</div>
+    <div class="modal-field"><span class="field-label">Submitted</span>${fmtDate(b.created_at)}</div>
+  `;
+  document.getElementById('inquiryModal').style.display = 'flex';
+}
+
+function closeInquiryModal() {
+  document.getElementById('inquiryModal').style.display = 'none';
+}
+
+// Pure display toggle — data-fetching and render() are completely unaffected by
+// which tab is showing, so switching tabs never shows stale content.
+function updateTabUI() {
+  document.getElementById('tabBookings').classList.toggle('active', currentTab === 'bookings');
+  document.getElementById('tabRevenue').classList.toggle('active', currentTab === 'revenue');
+  document.getElementById('tabCustomers').classList.toggle('active', currentTab === 'customers');
+  document.querySelectorAll('#mainTabs .tab-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.getAttribute('data-tab') === currentTab);
+  });
+}
+
+function switchTab(name) {
+  currentTab = name;
+  localStorage.setItem('cl_active_tab', name);
+  updateTabUI();
+}
+
+function render() {
+  const filtered = activeHub === 'All hubs' ? bookings : bookings.filter(b => b.hub === activeHub);
+
+  const inquiries = filtered.filter(b => b.status === 'inquired');
+  const pending = filtered.filter(b => b.status === 'pending');
+  const ongoing = filtered.filter(b => ['confirmed', 'completed', 'cancelled', 'rejected'].includes(b.status));
+
+  // Metrics
+  const totalInquiries = filtered.filter(b => b.status === 'inquired').length;
+  const totalPending = filtered.filter(b => b.status === 'pending').length;
+  const totalConfirmed = filtered.filter(b => b.status === 'confirmed').length;
+  const perf = activeHub === 'All hubs' ? perfRows : perfRows.filter(r => r.hub === activeHub);
+  const revenue = perf.reduce((s, r) => s + Number(r.revenue || 0), 0);
+
+  document.getElementById('metrics').innerHTML = `
+    <div class="metric-card"><p class="label">New inquiries</p><p class="value">${totalInquiries}</p></div>
+    <div class="metric-card"><p class="label">Pending review</p><p class="value">${totalPending}</p></div>
+    <div class="metric-card"><p class="label">Confirmed</p><p class="value">${totalConfirmed}</p></div>
+    <div class="metric-card"><p class="label">Revenue</p><p class="value">${fmtMoney(revenue)}</p></div>
+  `;
+
+  // Inquiry table
+  const iTable = document.getElementById('inquiryTable');
+  const iEmpty = document.getElementById('inquiryEmpty');
+  if (inquiries.length === 0) {
+    iTable.style.display = 'none'; iEmpty.style.display = 'block';
+    iEmpty.textContent = 'No new inquiries awaiting review.';
+  } else {
+    iTable.style.display = 'table'; iEmpty.style.display = 'none';
+    document.getElementById('inquiryBody').innerHTML = inquiries.map(inquiryRowHtml).join('');
+  }
+
+  // Pending table
+  const pdTable = document.getElementById('pendingTable');
+  const pdEmpty = document.getElementById('pendingEmpty');
+  if (pending.length === 0) {
+    pdTable.style.display = 'none'; pdEmpty.style.display = 'block';
+    pdEmpty.textContent = 'No pending bookings.';
+  } else {
+    pdTable.style.display = 'table'; pdEmpty.style.display = 'none';
+    document.getElementById('pendingBody').innerHTML = pending.map(pendingRowHtml).join('');
+  }
+
+  // Ongoing table
+  const oTable = document.getElementById('ongoingTable');
+  const oEmpty = document.getElementById('ongoingEmpty');
+  if (ongoing.length === 0) {
+    oTable.style.display = 'none'; oEmpty.style.display = 'block';
+    oEmpty.textContent = 'No ongoing bookings yet.';
+  } else {
+    oTable.style.display = 'table'; oEmpty.style.display = 'none';
+    document.getElementById('ongoingBody').innerHTML = ongoing.map(rowHtml).join('');
+  }
+
+  // All bookings (master database view — every status, own filters)
+  const abTable = document.getElementById('allBookingsTable');
+  const abEmpty = document.getElementById('allBookingsEmpty');
+  const allFiltered = computeAllBookingsFiltered();
+  if (allFiltered.length === 0) {
+    abTable.style.display = 'none'; abEmpty.style.display = 'block';
+    abEmpty.textContent = 'No bookings match these filters.';
+  } else {
+    abTable.style.display = 'table'; abEmpty.style.display = 'none';
+    document.getElementById('allBookingsBody').innerHTML = allFiltered.map(allBookingRowHtml).join('');
+  }
+  updateSortArrows();
+
+  // Revenue: summary cards + monthly trend (both hub-filtered)
+  renderRevenueSummary(perf, filtered);
+  renderRevenueTrend(filtered);
+
+  // Revenue breakdown table — avg/booking divides the view's revenue (confirmed+
+  // completed price) by a confirmed+completed COUNT computed from `bookings`
+  // (revenueBookingCounts), not perf's confirmed_bookings column, which is
+  // confirmed-only and would understate the denominator.
+  const revenueCounts = revenueBookingCounts(bookings);
+  const pTable = document.getElementById('perfTable');
+  const pEmpty = document.getElementById('perfEmpty');
+  if (perf.length === 0) {
+    pTable.style.display = 'none'; pEmpty.style.display = 'block';
+    pEmpty.textContent = 'No revenue data yet.';
+  } else {
+    pTable.style.display = 'table'; pEmpty.style.display = 'none';
+    document.getElementById('perfBody').innerHTML = perf.map(r => {
+      const denom = revenueCounts[r.hub + '|' + r.space] || 0;
+      const avg = denom > 0 ? Number(r.revenue || 0) / denom : 0;
+      return `<tr><td>${r.hub}</td><td>${r.space}</td><td>${r.total_bookings}</td><td>${r.confirmed_bookings}</td><td>${fmtMoney(r.revenue)}</td><td>${fmtMoney(avg)}</td></tr>`;
+    }).join('');
+  }
+
+  // Customers tab — independent of activeHub/activeSpace by design
+  renderCustomersTab();
+
+  attachActionHandlers();
+}
+
+function attachActionHandlers() {
+  document.querySelectorAll('.action-select').forEach(sel => {
+    sel.addEventListener('change', async (e) => {
+      const bookingId = e.target.getAttribute('data-id');
+      const newStatus = e.target.value;
+      if (!newStatus) return;
+      e.target.disabled = true;
+      try {
+        await updateBookingStatus(bookingId, newStatus);
+        const b = bookings.find(x => x.id === bookingId);
+        if (b) b.status = newStatus;
+        render();
+      } catch (err) {
+        alert('Could not update status: ' + err.message);
+        e.target.disabled = false;
+      }
+    });
+  });
+
+  // Accept button on inquiries: inquired -> pending, then notify (best-effort).
+  document.querySelectorAll('.accept-btn:not(.reject-confirm)').forEach(btn => {
+    btn.addEventListener('click', (e) => acceptInquiry(e.target.getAttribute('data-id'), e.target));
+  });
+
+  // Reject: open the inline reason box.
+  document.querySelectorAll('.reject-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => { rejectingId = e.target.getAttribute('data-id'); render(); });
+  });
+
+  // Reject box: cancel / confirm.
+  document.querySelectorAll('.reject-cancel').forEach(btn => {
+    btn.addEventListener('click', () => { rejectingId = null; render(); });
+  });
+  document.querySelectorAll('.reject-confirm').forEach(btn => {
+    btn.addEventListener('click', (e) => confirmReject(e.target.getAttribute('data-id'), e.target));
+  });
+
+  // Resend a failed accept-notification for a pending booking.
+  document.querySelectorAll('.resend-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => resendNotification(e.target.getAttribute('data-id'), e.target));
+  });
+
+  // Read-only inquiry detail pop-out.
+  document.querySelectorAll('.view-inquiry-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => openInquiryDetail(e.target.getAttribute('data-id')));
+  });
+}
+
+async function acceptInquiry(bookingId, btn) {
+  const b = bookings.find(x => x.id === bookingId);
+  btn.disabled = true;
+  btn.textContent = 'Accepting…';
+  // 1. The DB status change is the source of truth — it must succeed first.
+  try {
+    await patchBooking(bookingId, { status: 'pending', reviewed_at: new Date().toISOString() });
+    if (b) b.status = 'pending';
+  } catch (err) {
+    alert('Could not accept inquiry: ' + err.message);
+    btn.disabled = false;
+    btn.textContent = 'Accept';
+    return;
+  }
+  // 2. Notification is best-effort and must never undo step 1.
+  const payload = b ? buildNotifyPayload(b) : { booking_id: bookingId };
+  try { await insertNotificationLog(bookingId, 'inquiry_accepted', payload); } catch (e) { /* non-blocking */ }
+  const ok = await sendWebhook(payload);
+  if (ok) delete notifyPayloads[bookingId];
+  else notifyPayloads[bookingId] = payload;   // surfaces the warning + Resend in the Pending row
+  render();
+}
+
+async function confirmReject(bookingId, btn) {
+  const input = document.querySelector('.reject-reason[data-id="' + bookingId + '"]');
+  const reason = ((input && input.value) || '').trim();
+  if (!reason) {                                // reason is required
+    if (input) { input.style.borderColor = '#a3312d'; input.focus(); }
+    return;
+  }
+  btn.disabled = true;
+  btn.textContent = 'Rejecting…';
+  try {
+    await patchBooking(bookingId, { status: 'rejected', rejection_reason: reason });
+    const b = bookings.find(x => x.id === bookingId);
+    if (b) b.status = 'rejected';
+    rejectingId = null;
+    render();
+  } catch (err) {
+    alert('Could not reject inquiry: ' + err.message);
+    btn.disabled = false;
+    btn.textContent = 'Confirm reject';
+  }
+}
+
+async function resendNotification(bookingId, btn) {
+  const payload = notifyPayloads[bookingId];
+  if (!payload) return;
+  btn.disabled = true;
+  btn.textContent = 'Resending…';
+  const ok = await sendWebhook(payload);
+  if (ok) {
+    delete notifyPayloads[bookingId];
+    try { await insertNotificationLog(bookingId, 'inquiry_accepted_resend', payload); } catch (e) { /* non-blocking */ }
+  }
+  render();
+}
+
+document.getElementById('connectBtn').addEventListener('click', connect);
+document.getElementById('refreshBtn').addEventListener('click', () => { if (SUPA_URL) loadAll(); });
+
+// These are attached once — render() never replaces these elements, only their
+// siblings/children — so typing in the search box keeps focus and cursor position.
+document.getElementById('allBookingsSearch').addEventListener('input', (e) => {
+  searchQuery = e.target.value;
+  render();
+});
+document.getElementById('spaceFilterSelect').addEventListener('change', (e) => {
+  activeSpace = e.target.value;
+  render();
+});
+document.querySelectorAll('#allBookingsTable th[data-sort]').forEach(th => {
+  th.addEventListener('click', () => {
+    const col = th.getAttribute('data-sort');
+    if (sortState.col === col) sortState.dir = sortState.dir === 'asc' ? 'desc' : 'asc';
+    else sortState = { col: col, dir: 'asc' };
+    render();
+  });
+});
+document.querySelectorAll('#mainTabs .tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => switchTab(btn.getAttribute('data-tab')));
+});
+document.getElementById('customerSearch').addEventListener('input', (e) => {
+  customerSearchQuery = e.target.value;
+  render();
+});
+
+// Customer + inquiry modals: close via the × button, clicking the backdrop, or Escape.
+document.getElementById('customerModalClose').addEventListener('click', closeCustomerModal);
+document.getElementById('customerModal').addEventListener('click', (e) => {
+  if (e.target.id === 'customerModal') closeCustomerModal();
+});
+document.getElementById('inquiryModalClose').addEventListener('click', closeInquiryModal);
+document.getElementById('inquiryModal').addEventListener('click', (e) => {
+  if (e.target.id === 'inquiryModal') closeInquiryModal();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') { closeCustomerModal(); closeInquiryModal(); }
+});
+
+// Auto-load saved credentials + last-selected tab
+(function () {
+  const url = localStorage.getItem('cl_supabase_url');
+  const key = localStorage.getItem('cl_supabase_key');
+  const hook = localStorage.getItem('cl_zapier_webhook');
+  const savedTab = localStorage.getItem('cl_active_tab');
+  if (url) document.getElementById('supaUrl').value = url;
+  if (key) document.getElementById('supaKey').value = key;
+  if (hook) document.getElementById('zapierWebhook').value = hook;
+  if (hook) ZAPIER_WEBHOOK = hook;
+  if (savedTab === 'bookings' || savedTab === 'revenue' || savedTab === 'customers') currentTab = savedTab;
+  updateTabUI();   // independent of connection state — the tab shell shows immediately
+  if (url && key) { SUPA_URL = url; SUPA_KEY = key; loadAll(); }
+})();
+</script>
+
+</body>
+</html>
