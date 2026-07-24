@@ -63,6 +63,9 @@
   .metric-card { background: white; border: 1px solid #e6e6e1; border-radius: 10px; padding: 15px 18px; }
   .metric-card p.label { margin: 0 0 6px; font-size: 11px; color: #6b6b66; text-transform: uppercase; letter-spacing: 0.03em; }
   .metric-card p.value { margin: 0; font-size: 23px; font-weight: 600; }
+  .metric-card p.metric-sub { margin: 4px 0 0; font-size: 11px; color: #6b6b66; }
+  .metric-card p.metric-sub.positive { color: #1f6b45; }
+  .metric-card p.metric-sub.negative { color: #a3312d; }
 
   .section-title { font-size: 16px; font-weight: 600; margin: 30px 0 6px; }
   .section-sub { font-size: 13px; color: #6b6b66; margin: 0 0 12px; }
@@ -91,9 +94,12 @@
   .quote-detail { font-size: 11px; color: #9a9a94; font-weight: 400; }
 
   .action-select { padding: 6px 8px; border: 1px solid #d8d8d3; border-radius: 6px; font-size: 12px; background: white; cursor: pointer; }
-  .accept-btn { padding: 7px 16px; border: none; border-radius: 6px; font-size: 12px; background: #0f6e56; color: white; cursor: pointer; font-weight: 500; }
-  .accept-btn:hover { background: #0c5a46; }
-  .accept-btn:disabled { background: #a9c9bf; cursor: default; }
+  /* .kpi-save-btn shares this look but is NOT wired to the .accept-btn click
+     handler below (that's reserved for actually accepting an inquiry) — see
+     the note at attachActionHandlers(). */
+  .accept-btn, .kpi-save-btn { padding: 7px 16px; border: none; border-radius: 6px; font-size: 12px; background: #0f6e56; color: white; cursor: pointer; font-weight: 500; }
+  .accept-btn:hover, .kpi-save-btn:hover { background: #0c5a46; }
+  .accept-btn:disabled, .kpi-save-btn:disabled { background: #a9c9bf; cursor: default; }
 
   .empty-state, .loading-state, .error-state { padding: 24px 14px; color: #6b6b66; font-size: 14px; }
   .error-state { color: #a3312d; }
@@ -166,6 +172,26 @@
   .collapse-arrow { font-size: 11px; color: #6b6b66; }
   .collapsible-content.collapsed { display: none; }
 
+  /* KPI target entry (KPI tab) */
+  .kpi-target-input { width: 140px; padding: 6px 8px; border: 1px solid #d8d8d3; border-radius: 6px; font-size: 13px; }
+
+  /* KPI progress (Revenue Overview) */
+  .kpi-row { margin-bottom: 16px; }
+  .kpi-row:last-child { margin-bottom: 0; }
+  .kpi-row-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 5px; font-size: 13px; }
+  .kpi-row-header .kpi-hub-name { font-weight: 600; }
+  .kpi-row-header .kpi-stats { color: #6b6b66; font-size: 12px; }
+  .kpi-bar-track { background: #f0f0ed; border-radius: 6px; height: 10px; overflow: hidden; }
+  .kpi-bar-fill { height: 100%; background: #0f6e56; border-radius: 6px; }
+  .kpi-bar-fill.exceeded { background: #1f6b45; }
+  .kpi-remaining { font-size: 12px; color: #6b6b66; margin-top: 5px; }
+  .kpi-remaining.exceeded { color: #1f6b45; font-weight: 600; }
+  .kpi-no-target { font-size: 12px; color: #9a9a94; font-style: italic; margin-top: 5px; }
+  .kpi-pace { font-size: 11px; margin-top: 3px; }
+  .kpi-pace.ahead { color: #1f6b45; }
+  .kpi-pace.behind { color: #a3312d; }
+  .kpi-pace.on-pace { color: #6b6b66; }
+
   /* Bookings sub-tabs (Incoming / Pending / Ongoing / All) — same visual
      pattern as the main Bookings/Revenue/Customers tabs above, one step
      down in the hierarchy (smaller text, tighter spacing) so it reads as
@@ -229,6 +255,7 @@
     <button class="tab-btn active" data-tab="bookings">Bookings</button>
     <button class="tab-btn" data-tab="revenue">Revenue</button>
     <button class="tab-btn" data-tab="customers">Customers</button>
+    <button class="tab-btn" data-tab="kpi">KPI</button>
   </div>
 
   <div id="tabBookings" class="tab-panel active">
@@ -323,18 +350,32 @@
 
   <div id="tabRevenue" class="tab-panel">
 
-  <p class="section-title">Revenue</p>
-  <p class="section-sub">Based on confirmed and completed bookings. The hub filter above applies here too.</p>
+  <div class="tabs subtabs" id="revenueSubTabs"></div>
 
+  <div id="revSubtabOverview" class="tab-panel active">
+  <p class="section-title">Revenue</p>
+  <p class="section-sub">Based on confirmed and completed bookings.</p>
   <div class="metrics" id="revenueSummary"></div>
 
-  <p class="section-sub spaced">Monthly trend — confirmed + completed bookings, by start date</p>
+  <p class="section-sub spaced">KPI progress — <span id="kpiProgressFyLabel"></span></p>
+  <div class="card card-padded">
+    <div id="kpiProgressList"></div>
+    <div id="kpiProgressEmpty" class="empty-state" style="display:none;">No hubs to show KPI progress for yet.</div>
+  </div>
+  </div>
+
+  <div id="revSubtabTrend" class="tab-panel">
+  <p class="section-title">Monthly trend</p>
+  <p class="section-sub">Confirmed + completed bookings, grouped by start date.</p>
   <div class="card card-padded">
     <div id="revenueTrend" class="revenue-trend"></div>
     <div id="revenueTrendEmpty" class="empty-state" style="display:none;">No revenue data yet.</div>
   </div>
+  </div>
 
-  <p class="section-sub spaced">Breakdown by hub &amp; space</p>
+  <div id="revSubtabBreakdown" class="tab-panel">
+  <p class="section-title">Breakdown by hub &amp; space</p>
+  <p class="section-sub">Total bookings, confirmed count, revenue, and average per hub and space.</p>
   <div class="card">
     <table id="perfTable" style="display:none;">
       <thead>
@@ -343,6 +384,7 @@
       <tbody id="perfBody"></tbody>
     </table>
     <div id="perfEmpty" class="empty-state">Connect to load revenue data.</div>
+  </div>
   </div>
 
   </div>
@@ -362,6 +404,22 @@
       <tbody id="customersBody"></tbody>
     </table>
     <div id="customersEmpty" class="empty-state">Connect to load customers.</div>
+  </div>
+
+  </div>
+
+  <div id="tabKpi" class="tab-panel">
+
+  <p class="section-title">Annual KPI targets</p>
+  <p class="section-sub">Set each hub's revenue target for <span id="kpiFyLabel"></span>. Progress shows on the Revenue tab. The hub filter above applies here too.</p>
+  <div class="card">
+    <table id="kpiTable" style="display:none;">
+      <thead>
+        <tr><th>Hub</th><th>Target revenue (RM)</th><th>Action</th></tr>
+      </thead>
+      <tbody id="kpiBody"></tbody>
+    </table>
+    <div id="kpiEmpty" class="empty-state">Connect to load KPI targets.</div>
   </div>
 
   </div>
@@ -402,11 +460,14 @@ let ZAPIER_WEBHOOK = DEFAULT_ZAPIER_WEBHOOK;
 let bookings = [];      // full booking rows joined with space + hub + customer + rates
 let perfRows = [];
 let customers = [];      // one row per customer, with their own bookings nested — for the Customers tab
+let allHubs = [];        // every hub (id + name), incl. ones with 0 bookings — for the KPI tab
+let hubKpis = [];        // this fiscal year's saved target_revenue rows from hub_kpis, one per hub at most
 let customerSearchQuery = '';
 let activeHub = 'All hubs';
 let activeSpace = 'All spaces';
 let currentTab = 'bookings';   // 'bookings' | 'revenue' — purely a display toggle, render() still updates both
 let bookingsSubTab = 'inquiries';   // which of the 4 sections is showing inside the Bookings tab
+let revenueSubTab = 'overview';      // which of the 3 sections is showing inside the Revenue tab
 let ongoingCollapsed = true;    // Ongoing bookings starts collapsed — longest section, least time-sensitive
 let rejectingId = null;         // inquiry id currently showing the inline reject-reason box
 const notifyPayloads = {};      // bookingId -> payload, present only while a webhook send is outstanding/failed
@@ -616,6 +677,7 @@ async function loadAll() {
 
     perfRows = await apiGet('v_space_performance?select=*');
     await loadCustomers();
+    await loadHubKpiData();
 
     statusMsg.textContent = 'Connected — ' + bookings.length + ' bookings loaded.';
     renderHubFilters();
@@ -644,6 +706,109 @@ async function loadCustomers() {
     const empty = document.getElementById('customersEmpty');
     if (empty) empty.textContent = 'Could not load customers: ' + err.message;
   }
+}
+
+// Full hub list (including hubs with zero bookings — renderHubFilters only
+// surfaces hubs that already have a booking, but every hub still needs a KPI
+// target) + this fiscal year's saved targets. Non-fatal, same reasoning as
+// loadCustomers above.
+async function loadHubKpiData() {
+  try {
+    allHubs = await apiGet('hubs?select=id,name&order=name.asc');
+    hubKpis = await apiGet('hub_kpis?select=*&fiscal_year=eq.' + currentFiscalYear());
+  } catch (err) {
+    allHubs = [];
+    hubKpis = [];
+    const empty = document.getElementById('kpiEmpty');
+    if (empty) empty.textContent = 'Could not load KPI data: ' + err.message;
+  }
+}
+
+// Fiscal year runs Nov 1 -> Oct 31, labeled by the calendar year it ENDS in
+// (e.g. FY2026 = Nov 1, 2025 -> Oct 31, 2026) — matches migration_03's convention,
+// so "this year's KPI" lines up with today's actual calendar year.
+function currentFiscalYear() {
+  const now = new Date();
+  const month = now.getMonth() + 1; // 1-12
+  return month >= 11 ? now.getFullYear() + 1 : now.getFullYear();
+}
+
+function fiscalYearRange(fyLabel) {
+  return { start: (fyLabel - 1) + '-11-01', end: fyLabel + '-10-31' };
+}
+
+function fiscalYearDisplay(fyLabel) {
+  return 'FY' + fyLabel + ' (Nov ' + (fyLabel - 1) + '–Oct ' + fyLabel + ')';
+}
+
+// Same revenue definition as the rest of the dashboard (isRevenueBooking =
+// confirmed + completed), keyed off start_date like computeMonthlyRevenue.
+function computeHubRevenueForFiscalYear(hubName, fyLabel) {
+  const { start, end } = fiscalYearRange(fyLabel);
+  return bookings
+    .filter(b => b.hub === hubName && isRevenueBooking(b) && b.start_date >= start && b.start_date <= end)
+    .reduce((sum, b) => sum + Number(b.price || 0), 0);
+}
+
+// % of the current fiscal year that has elapsed as of today — used to judge
+// whether a hub is ahead of or behind pace on its KPI, not just the raw total.
+function fiscalYearElapsedPct(fyLabel) {
+  const { start, end } = fiscalYearRange(fyLabel);
+  const startDate = new Date(start + 'T00:00:00');
+  const endDate = new Date(end + 'T23:59:59');
+  const today = new Date();
+  const totalMs = endDate - startDate;
+  const elapsedMs = Math.min(Math.max(today - startDate, 0), totalMs);
+  return (elapsedMs / totalMs) * 100;
+}
+
+// Bookings not yet decided either way — a forward-looking view of what's still
+// in play. Uses the live quote, not `price` (which is only ever set once a
+// booking is finalized), since pending/inquiring bookings don't have that yet.
+function computePipelineValue(rows) {
+  return rows
+    .filter(b => b.status === 'pending' || b.status === 'inquired')
+    .reduce((sum, b) => sum + Number(b.quote.total || 0), 0);
+}
+
+// Calendar-month revenue (deliberately NOT fiscal-year-scoped) — for the
+// month-over-month comparison on the "This month" card.
+function computeMonthRevenue(rows, ym /* 'YYYY-MM' */) {
+  return rows
+    .filter(b => isRevenueBooking(b) && b.start_date && b.start_date.slice(0, 7) === ym)
+    .reduce((sum, b) => sum + Number(b.price || 0), 0);
+}
+
+function shiftMonth(year, month, delta) {
+  const d = new Date(year, month - 1 + delta, 1);
+  return { year: d.getFullYear(), month: d.getMonth() + 1 };
+}
+
+function momChangeText(thisMonth, lastMonth) {
+  if (lastMonth === 0) return thisMonth === 0 ? 'No revenue yet this month' : 'No revenue last month to compare';
+  const pct = Math.round(((thisMonth - lastMonth) / lastMonth) * 100);
+  return (pct >= 0 ? '+' : '') + pct + '% vs last month';
+}
+
+function momChangeClass(thisMonth, lastMonth) {
+  if (lastMonth === 0) return '';
+  return thisMonth >= lastMonth ? 'positive' : 'negative';
+}
+
+// Upsert on (hub_id, fiscal_year) — resolution=merge-duplicates + on_conflict
+// means a repeat save updates the existing row instead of erroring or duplicating.
+async function upsertKpi(hubId, targetRevenue) {
+  const res = await fetch(SUPA_URL + '/rest/v1/hub_kpis?on_conflict=hub_id,fiscal_year', {
+    method: 'POST',
+    headers: {
+      apikey: SUPA_KEY,
+      Authorization: 'Bearer ' + SUPA_KEY,
+      'Content-Type': 'application/json',
+      Prefer: 'resolution=merge-duplicates,return=minimal'
+    },
+    body: JSON.stringify({ hub_id: hubId, fiscal_year: currentFiscalYear(), target_revenue: targetRevenue })
+  });
+  if (!res.ok) throw new Error('Save failed: ' + res.status);
 }
 
 // Supabase URL/key are fixed constants now (see top of script) — this button
@@ -910,10 +1075,26 @@ function renderRevenueSummary(perf, filtered) {
   // not perf's confirmed_bookings column, which counts 'confirmed' status only.
   const revenueCount = filtered.filter(isRevenueBooking).length;
   const avgValue = revenueCount > 0 ? revenue / revenueCount : 0;
+
+  const pipeline = computePipelineValue(filtered);
+
+  const now = new Date();
+  const thisYm = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+  const prevMonth = shiftMonth(now.getFullYear(), now.getMonth() + 1, -1);
+  const prevYm = prevMonth.year + '-' + String(prevMonth.month).padStart(2, '0');
+  const thisMonthRevenue = computeMonthRevenue(filtered, thisYm);
+  const lastMonthRevenue = computeMonthRevenue(filtered, prevYm);
+
   document.getElementById('revenueSummary').innerHTML = `
     <div class="metric-card"><p class="label">Total revenue</p><p class="value">${fmtMoney(revenue)}</p></div>
     <div class="metric-card"><p class="label">Confirmed + completed</p><p class="value">${revenueCount}</p></div>
     <div class="metric-card"><p class="label">Average booking value</p><p class="value">${fmtMoney(avgValue)}</p></div>
+    <div class="metric-card"><p class="label">Pipeline (pending + inquiring)</p><p class="value">${fmtMoney(pipeline)}</p></div>
+    <div class="metric-card">
+      <p class="label">This month</p>
+      <p class="value">${fmtMoney(thisMonthRevenue)}</p>
+      <p class="metric-sub ${momChangeClass(thisMonthRevenue, lastMonthRevenue)}">${momChangeText(thisMonthRevenue, lastMonthRevenue)}</p>
+    </div>
   `;
 }
 
@@ -1054,6 +1235,7 @@ function updateTabUI() {
   document.getElementById('tabBookings').classList.toggle('active', currentTab === 'bookings');
   document.getElementById('tabRevenue').classList.toggle('active', currentTab === 'revenue');
   document.getElementById('tabCustomers').classList.toggle('active', currentTab === 'customers');
+  document.getElementById('tabKpi').classList.toggle('active', currentTab === 'kpi');
   document.querySelectorAll('#mainTabs .tab-btn').forEach(btn => {
     btn.classList.toggle('active', btn.getAttribute('data-tab') === currentTab);
   });
@@ -1113,6 +1295,38 @@ function renderBookingsSubTabs(counts) {
   updateBookingsSubTabUI();
 }
 
+// Same idea as the Bookings sub-tabs, one level simpler: these are 3 different
+// views of the same data (not an action queue), so no count badges — just labels.
+const REVENUE_SUBTABS = [
+  { key: 'overview', label: 'Overview' },
+  { key: 'trend', label: 'Monthly Trend' },
+  { key: 'breakdown', label: 'Breakdown' }
+];
+
+function updateRevenueSubTabUI() {
+  document.querySelectorAll('#revenueSubTabs .tab-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.getAttribute('data-subtab') === revenueSubTab);
+  });
+  document.getElementById('revSubtabOverview').classList.toggle('active', revenueSubTab === 'overview');
+  document.getElementById('revSubtabTrend').classList.toggle('active', revenueSubTab === 'trend');
+  document.getElementById('revSubtabBreakdown').classList.toggle('active', revenueSubTab === 'breakdown');
+}
+
+function renderRevenueSubTabs() {
+  const container = document.getElementById('revenueSubTabs');
+  container.innerHTML = REVENUE_SUBTABS.map(t =>
+    `<button class="tab-btn" data-subtab="${t.key}">${t.label}</button>`
+  ).join('');
+  container.querySelectorAll('button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      revenueSubTab = btn.getAttribute('data-subtab');
+      localStorage.setItem('cl_revenue_subtab', revenueSubTab);
+      updateRevenueSubTabUI();
+    });
+  });
+  updateRevenueSubTabUI();
+}
+
 function updateOngoingCollapseUI() {
   document.getElementById('ongoingContent').classList.toggle('collapsed', ongoingCollapsed);
   document.getElementById('ongoingArrow').textContent = ongoingCollapsed ? '▸' : '▾';
@@ -1122,6 +1336,105 @@ function toggleOngoingCollapse() {
   ongoingCollapsed = !ongoingCollapsed;
   localStorage.setItem('cl_ongoing_collapsed', ongoingCollapsed ? '1' : '0');
   updateOngoingCollapseUI();
+}
+
+// KPI tab row: one per hub, an editable target + a Save button. Pre-fills
+// from hubKpis if this hub already has a target for the current fiscal year.
+function kpiRowHtml(hub) {
+  const existing = hubKpis.find(k => k.hub_id === hub.id);
+  const value = existing ? existing.target_revenue : '';
+  return `<tr>
+    <td>${escapeHtml(hub.name)}</td>
+    <td><input class="kpi-target-input" data-hub-id="${hub.id}" type="number" min="0" step="1000" value="${value}" placeholder="0" /></td>
+    <td><button class="kpi-save-btn" data-hub-id="${hub.id}">Save</button></td>
+  </tr>`;
+}
+
+// allHubs (not the bookings-derived hub list) so a hub with zero bookings
+// still gets a KPI row — respects activeHub like the rest of the dashboard.
+function renderKpiTab() {
+  document.getElementById('kpiFyLabel').textContent = fiscalYearDisplay(currentFiscalYear());
+  const table = document.getElementById('kpiTable');
+  const empty = document.getElementById('kpiEmpty');
+  const hubs = activeHub === 'All hubs' ? allHubs : allHubs.filter(h => h.name === activeHub);
+  if (hubs.length === 0) {
+    table.style.display = 'none'; empty.style.display = 'block';
+    empty.textContent = allHubs.length === 0 ? 'Connect to load KPI targets.' : 'No hub matches this filter.';
+  } else {
+    table.style.display = 'table'; empty.style.display = 'none';
+    document.getElementById('kpiBody').innerHTML = hubs.map(kpiRowHtml).join('');
+  }
+  document.querySelectorAll('.kpi-save-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => saveKpiTarget(e.target.getAttribute('data-hub-id'), e.target));
+  });
+}
+
+async function saveKpiTarget(hubId, btn) {
+  const input = document.querySelector('.kpi-target-input[data-hub-id="' + hubId + '"]');
+  const value = Number(input.value || 0);
+  btn.disabled = true;
+  btn.textContent = 'Saving…';
+  try {
+    await upsertKpi(hubId, value);
+    const existing = hubKpis.find(k => k.hub_id === hubId);
+    if (existing) existing.target_revenue = value;
+    else hubKpis.push({ hub_id: hubId, fiscal_year: currentFiscalYear(), target_revenue: value });
+    render();
+  } catch (err) {
+    alert('Could not save KPI target: ' + err.message);
+    btn.disabled = false;
+    btn.textContent = 'Save';
+  }
+}
+
+// Revenue Overview's progress-vs-KPI card — same activeHub scoping as the KPI
+// tab, so the two stay in sync with whichever hub is selected in the toolbar.
+function renderKpiProgress() {
+  const fy = currentFiscalYear();
+  document.getElementById('kpiProgressFyLabel').textContent = fiscalYearDisplay(fy);
+  const hubs = activeHub === 'All hubs' ? allHubs : allHubs.filter(h => h.name === activeHub);
+  const list = document.getElementById('kpiProgressList');
+  const empty = document.getElementById('kpiProgressEmpty');
+  if (hubs.length === 0) {
+    list.innerHTML = '';
+    empty.style.display = 'block';
+    return;
+  }
+  empty.style.display = 'none';
+  list.innerHTML = hubs.map(hub => {
+    const kpi = hubKpis.find(k => k.hub_id === hub.id);
+    const achieved = computeHubRevenueForFiscalYear(hub.name, fy);
+    if (!kpi || !kpi.target_revenue) {
+      return `<div class="kpi-row">
+        <div class="kpi-row-header"><span class="kpi-hub-name">${escapeHtml(hub.name)}</span><span class="kpi-stats">${fmtMoney(achieved)} earned</span></div>
+        <div class="kpi-no-target">No KPI target set — add one in the KPI tab.</div>
+      </div>`;
+    }
+    const target = Number(kpi.target_revenue);
+    const achievedPctRaw = (achieved / target) * 100;
+    const pct = Math.min(achievedPctRaw, 100);
+    const exceeded = achieved >= target;
+    const remaining = target - achieved;
+
+    // Pace: is the % of target achieved ahead of, behind, or roughly matching
+    // the % of the fiscal year that's already elapsed? A raw total alone can't
+    // tell you that — 21% of target sounds behind, but not if only 15% of the
+    // year has passed.
+    const yearElapsedPct = fiscalYearElapsedPct(fy);
+    const paceDiff = achievedPctRaw - yearElapsedPct;
+    const paceClass = paceDiff >= 3 ? 'ahead' : (paceDiff <= -3 ? 'behind' : 'on-pace');
+    const paceLabel = paceDiff >= 3 ? 'ahead of pace' : (paceDiff <= -3 ? 'behind pace' : 'on pace');
+
+    return `<div class="kpi-row">
+      <div class="kpi-row-header">
+        <span class="kpi-hub-name">${escapeHtml(hub.name)}</span>
+        <span class="kpi-stats">${fmtMoney(achieved)} of ${fmtMoney(target)} (${Math.round(achievedPctRaw)}%)</span>
+      </div>
+      <div class="kpi-bar-track"><div class="kpi-bar-fill${exceeded ? ' exceeded' : ''}" style="width:${pct}%;"></div></div>
+      <div class="kpi-remaining${exceeded ? ' exceeded' : ''}">${exceeded ? '🎉 KPI achieved — ' + fmtMoney(achieved - target) + ' over target' : fmtMoney(remaining) + ' to go'}</div>
+      <div class="kpi-pace ${paceClass}">${Math.round(yearElapsedPct)}% of ${fiscalYearDisplay(fy)} elapsed vs ${Math.round(achievedPctRaw)}% of target — ${paceLabel}</div>
+    </div>`;
+  }).join('');
 }
 
 function render() {
@@ -1134,6 +1447,7 @@ function render() {
   renderBookingsSubTabs({ inquiries: inquiries.length, pending: pending.length, ongoing: ongoing.length });
   document.getElementById('ongoingToggleLabel').textContent =
     'Ongoing bookings' + (ongoing.length ? ` (${ongoing.length})` : '');
+  renderRevenueSubTabs();
 
   // Metrics
   const totalInquiries = filtered.filter(b => b.status === 'inquired').length;
@@ -1220,6 +1534,10 @@ function render() {
 
   // Customers tab — independent of activeHub/activeSpace by design
   renderCustomersTab();
+
+  // KPI tab + Revenue Overview's progress-vs-KPI card — both respect activeHub
+  renderKpiTab();
+  renderKpiProgress();
 
   attachActionHandlers();
 }
@@ -1388,14 +1706,17 @@ document.addEventListener('keydown', (e) => {
   const hook = localStorage.getItem('cl_zapier_webhook');
   const savedTab = localStorage.getItem('cl_active_tab');
   const savedSubTab = localStorage.getItem('cl_bookings_subtab');
+  const savedRevenueSubTab = localStorage.getItem('cl_revenue_subtab');
   const savedOngoingCollapsed = localStorage.getItem('cl_ongoing_collapsed');
   ZAPIER_WEBHOOK = hook || DEFAULT_ZAPIER_WEBHOOK;
   document.getElementById('zapierWebhook').value = ZAPIER_WEBHOOK;
-  if (savedTab === 'bookings' || savedTab === 'revenue' || savedTab === 'customers') currentTab = savedTab;
+  if (savedTab === 'bookings' || savedTab === 'revenue' || savedTab === 'customers' || savedTab === 'kpi') currentTab = savedTab;
   if (BOOKINGS_SUBTABS.some(t => t.key === savedSubTab)) bookingsSubTab = savedSubTab;
+  if (REVENUE_SUBTABS.some(t => t.key === savedRevenueSubTab)) revenueSubTab = savedRevenueSubTab;
   if (savedOngoingCollapsed !== null) ongoingCollapsed = savedOngoingCollapsed === '1';
   updateTabUI();   // independent of connection state — the tab shell shows immediately
   updateBookingsSubTabUI();
+  updateRevenueSubTabUI();
   updateOngoingCollapseUI();
   loadAll();
 })();
