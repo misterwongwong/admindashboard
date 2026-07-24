@@ -17,19 +17,6 @@
   .header p { margin: 0; font-size: 13px; color: #d5efe7; max-width: 680px; }
   .container { max-width: 1180px; margin: 0 auto; padding: 22px 32px 64px; }
 
-  .config-bar {
-    display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
-    background: white; border: 1px solid #e6e6e1; border-radius: 10px;
-    padding: 12px; margin-bottom: 12px;
-  }
-  .config-bar input {
-    flex: 1; min-width: 200px; padding: 8px 10px; border: 1px solid #d8d8d3;
-    border-radius: 6px; font-size: 13px;
-  }
-  .config-bar button {
-    padding: 8px 16px; border-radius: 6px; border: none; background: #0f6e56;
-    color: white; font-size: 13px; cursor: pointer;
-  }
   .status-msg { font-size: 13px; color: #6b6b66; margin: 0 0 18px; }
 
   /* Hub/space switcher — the first control row on the page, directly under
@@ -125,11 +112,6 @@
   .reject-box input { padding: 6px 8px; border: 1px solid #d8d8d3; border-radius: 6px; font-size: 12px; }
   .reject-actions { display: flex; gap: 6px; align-items: center; }
   .link-btn { background: none; border: none; color: #6b6b66; font-size: 12px; cursor: pointer; text-decoration: underline; padding: 6px 4px; }
-
-  /* Webhook notification warning */
-  .notify-warn { display: block; margin-top: 6px; font-size: 11px; color: #a3312d; }
-  .resend-btn { margin-left: 6px; padding: 2px 9px; border: 1px solid #d8a3a0; border-radius: 5px; background: white; color: #a3312d; cursor: pointer; font-size: 11px; }
-  .resend-btn:hover { background: #fbdede; }
 
   /* Space filter (extends the hub filter in the toolbar) */
   .space-select { padding: 7px 10px; border: 1px solid #d8d8d3; border-radius: 6px; font-size: 13px; background: white; color: #333; cursor: pointer; }
@@ -270,10 +252,6 @@
     <button class="refresh-btn" id="refreshBtn">↻ Refresh</button>
   </div>
 
-  <div class="config-bar">
-    <input id="zapierWebhook" type="text" placeholder="Zapier Catch Hook URL (optional — sent on Accept)" />
-    <button id="connectBtn">Save webhook</button>
-  </div>
   <p class="status-msg" id="statusMsg">Connecting…</p>
 
   <div class="metrics" id="metrics"></div>
@@ -463,18 +441,11 @@
 const SUPABASE_URL = 'https://qjglewesqqnxupeklzuc.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFqZ2xld2VzcXFueHVwZWtsenVjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ3NDc0MjksImV4cCI6MjEwMDMyMzQyOX0.uZ6bjAPBUZQW3JZGzc1qgtffyTznbkrWGgDZpB66ZAk';
 
-// Production Zapier catch-hook — Zapier's own automation now owns sending the
-// acceptance email; this dashboard's only job is to hand it the inquiry data.
-// The "Zapier Catch Hook URL" box in the config bar can still override this
-// (e.g. to point at a test hook), but defaults here so it works with nothing typed in.
-const DEFAULT_ZAPIER_WEBHOOK = 'https://hooks.zapier.com/hooks/catch/28343750/44ffc6f/';
-
 // Service tax on rental services, per the business's confirmed rate (2026-07-24).
 const SST_RATE = 0.06;
 
 let SUPA_URL = SUPABASE_URL;
 let SUPA_KEY = SUPABASE_ANON_KEY;
-let ZAPIER_WEBHOOK = DEFAULT_ZAPIER_WEBHOOK;
 let bookings = [];      // full booking rows joined with space + hub + customer + rates
 let perfRows = [];
 let customers = [];      // one row per customer, with their own bookings nested — for the Customers tab
@@ -488,7 +459,6 @@ let bookingsSubTab = 'inquiries';   // which of the 4 sections is showing inside
 let revenueSubTab = 'overview';      // which of the 3 sections is showing inside the Revenue tab
 let ongoingCollapsed = true;    // Ongoing bookings starts collapsed — longest section, least time-sensitive
 let rejectingId = null;         // inquiry id currently showing the inline reject-reason box
-const notifyPayloads = {};      // bookingId -> payload, present only while a webhook send is outstanding/failed
 const expandedCustomers = new Set();   // merged-customer keys currently expanded in the Customers list
 
 const STATUS_FLOW = ['inquired', 'pending', 'confirmed', 'completed', 'cancelled', 'rejected'];
@@ -591,84 +561,13 @@ function updateBookingStatus(bookingId, newStatus, extraFields) {
   return patchBooking(bookingId, Object.assign({ status: newStatus }, extraFields));
 }
 
-// Append-only audit trail of what we notified about each booking.
-async function insertNotificationLog(bookingId, event, payload) {
-  const res = await fetch(SUPA_URL + '/rest/v1/notification_log', {
-    method: 'POST',
-    headers: {
-      apikey: SUPA_KEY,
-      Authorization: 'Bearer ' + SUPA_KEY,
-      'Content-Type': 'application/json',
-      Prefer: 'return=minimal'
-    },
-    body: JSON.stringify({ booking_id: bookingId, event: event, payload: payload })
-  });
-  if (!res.ok) throw new Error('Log failed: ' + res.status);
-}
-
-// Everything Zapier's email template needs, so it doesn't have to look anything up.
-function buildNotifyPayload(b) {
-  const details = `${b.eventType} at ${b.hub} / ${b.space}, ${b.start_date} to ${b.end_date} ` +
-    `(${b.duration} day${b.duration === 1 ? '' : 's'}), quotation ${fmtMoney(b.quote.total)}`;
-  return {
-    // Exact field names the Zapier Zap was built around — keep these so the
-    // acceptance email fires correctly regardless of how that Zap step maps fields.
-    guest_name: b.pic || b.customer,
-    guest_email: b.email,
-    inquiry_id: b.id,
-    inquiry_details: details,
-    date: new Date().toISOString(),
-    // Fuller detail alongside the above, in case a future email template wants
-    // these broken out individually instead of folded into inquiry_details.
-    booking_id: b.id,
-    pic_name: b.pic || b.customer,
-    company: b.company,
-    email: b.email,
-    phone: b.phone,
-    event_type: b.eventType,
-    hub: b.hub,
-    space: b.space,
-    start_date: b.start_date,
-    end_date: b.end_date,
-    duration_days: b.duration,
-    quotation_total: b.quote.total,
-    currency: 'MYR',
-    // Requested by the Zapier/quotations-table integration (2026-07-24) —
-    // exact field names as specified, for the quotations table + SST-compliant
-    // quotation document. customer_id/space_id are real DB ids, not names, so
-    // that table can properly link back to customers/spaces.
-    customer_id: b.customerId,
-    space_id: b.spaceId,
-    company_name: b.company,
-    contact_no: b.phone,
-    preferred_venue: b.preferredHub,
-    preferred_space: b.preferredSpace,
-    weekday_price: b.weekdayPrice,
-    weekend_price: b.weekendPrice,
-    weekday_count: b.quote.weekdays,
-    weekend_count: b.quote.weekends,
-    subtotal: b.quote.subtotal,
-    sst_amount: b.quote.sstAmount,
-    total_amount: b.quote.total
-  };
-}
-
-// POST the payload to the Zapier Catch Hook. Returns true/false — never throws,
-// so a failed notification can never roll back the booking status change.
-async function sendWebhook(payload) {
-  if (!ZAPIER_WEBHOOK) return false;
-  try {
-    const res = await fetch(ZAPIER_WEBHOOK, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-    return res.ok;
-  } catch (e) {
-    // Network error or CORS block — treated as a failed send so staff can retry.
-    return false;
-  }
-}
+// The Zapier notification now fires server-side (a Supabase database trigger
+// on bookings.status -> 'pending', see migration_06) instead of from this
+// browser — that sidesteps a CORS block Zapier's endpoint has for this site's
+// hosted origin, and means it fires reliably even if someone closes the tab
+// right after clicking Accept. buildNotifyPayload/sendWebhook/insertNotificationLog
+// used to do this client-side; removed along with the config bar's webhook
+// override field, since there's no longer a client-side call for it to configure.
 
 async function loadAll() {
   const statusMsg = document.getElementById('statusMsg');
@@ -862,16 +761,6 @@ async function upsertKpi(hubId, targetRevenue) {
   if (!res.ok) throw new Error('Save failed: ' + res.status);
 }
 
-// Supabase URL/key are fixed constants now (see top of script) — this button
-// only saves an optional Zapier override, then reloads so it takes effect.
-// Leaving the box blank and saving reverts to the production default.
-function connect() {
-  const entered = document.getElementById('zapierWebhook').value.trim();
-  ZAPIER_WEBHOOK = entered || DEFAULT_ZAPIER_WEBHOOK;
-  localStorage.setItem('cl_zapier_webhook', ZAPIER_WEBHOOK);
-  loadAll();
-}
-
 function renderHubFilters() {
   const hubs = ['All hubs', ...new Set(bookings.map(b => b.hub).filter(h => h && h !== '—'))];
   const container = document.getElementById('hubFilters');
@@ -973,9 +862,6 @@ function inquiryRowHtml(b) {
 // dropdown, plus a notification-failed warning + Resend if the webhook didn't land.
 function pendingRowHtml(b) {
   const quoteDetail = quoteDetailHtml(b.quote);
-  const warn = notifyPayloads[b.id]
-    ? `<span class="notify-warn">Accepted — notification failed.<button class="resend-btn" data-id="${b.id}">Resend</button></span>`
-    : '';
   return `<tr>
     <td>${escapeHtml(b.company) || '—'}<br><span class="quote-detail">${escapeHtml(b.customer)}</span></td>
     <td>${escapeHtml(b.eventType)}</td>
@@ -983,7 +869,7 @@ function pendingRowHtml(b) {
     <td>${escapeHtml(b.start_date)} → ${escapeHtml(b.end_date)}</td>
     <td><span class="quote">${fmtMoney(b.quote.total)}</span><br>${quoteDetail}</td>
     <td><span class="${statusClass(b.status)}">${statusLabel(b.status)}</span></td>
-    <td>${actionSelect(b)}${warn}</td>
+    <td>${actionSelect(b)}</td>
   </tr>`;
 }
 
@@ -1675,10 +1561,6 @@ function attachActionHandlers() {
     btn.addEventListener('click', (e) => confirmReject(e.target.getAttribute('data-id'), e.target));
   });
 
-  // Resend a failed accept-notification for a pending booking.
-  document.querySelectorAll('.resend-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => resendNotification(e.target.getAttribute('data-id'), e.target));
-  });
 
   // Read-only inquiry detail pop-out.
   document.querySelectorAll('.view-inquiry-btn').forEach(btn => {
@@ -1690,7 +1572,6 @@ async function acceptInquiry(bookingId, btn) {
   const b = bookings.find(x => x.id === bookingId);
   btn.disabled = true;
   btn.textContent = 'Accepting…';
-  // 1. The DB status change is the source of truth — it must succeed first.
   try {
     await patchBooking(bookingId, { status: 'pending', reviewed_at: new Date().toISOString() });
     if (b) b.status = 'pending';
@@ -1700,12 +1581,8 @@ async function acceptInquiry(bookingId, btn) {
     btn.textContent = 'Accept';
     return;
   }
-  // 2. Notification is best-effort and must never undo step 1.
-  const payload = b ? buildNotifyPayload(b) : { booking_id: bookingId };
-  try { await insertNotificationLog(bookingId, 'inquiry_accepted', payload); } catch (e) { /* non-blocking */ }
-  const ok = await sendWebhook(payload);
-  if (ok) delete notifyPayloads[bookingId];
-  else notifyPayloads[bookingId] = payload;   // surfaces the warning + Resend in the Pending row
+  // Zapier notification fires server-side off this same status change — see
+  // migration_06 — nothing further to do here.
   render();
 }
 
@@ -1731,20 +1608,6 @@ async function confirmReject(bookingId, btn) {
   }
 }
 
-async function resendNotification(bookingId, btn) {
-  const payload = notifyPayloads[bookingId];
-  if (!payload) return;
-  btn.disabled = true;
-  btn.textContent = 'Resending…';
-  const ok = await sendWebhook(payload);
-  if (ok) {
-    delete notifyPayloads[bookingId];
-    try { await insertNotificationLog(bookingId, 'inquiry_accepted_resend', payload); } catch (e) { /* non-blocking */ }
-  }
-  render();
-}
-
-document.getElementById('connectBtn').addEventListener('click', connect);
 document.getElementById('refreshBtn').addEventListener('click', () => { if (SUPA_URL) loadAll(); });
 
 // These are attached once — render() never replaces these elements, only their
@@ -1785,16 +1648,13 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') closeInquiryModal();
 });
 
-// Auto-load Zapier override (if any) + last-selected tab. Supabase connects
-// immediately on every page load now — no credentials to wait on.
+// Restore last-selected tab. Supabase connects immediately on every page
+// load now — no credentials to wait on.
 (function () {
-  const hook = localStorage.getItem('cl_zapier_webhook');
   const savedTab = localStorage.getItem('cl_active_tab');
   const savedSubTab = localStorage.getItem('cl_bookings_subtab');
   const savedRevenueSubTab = localStorage.getItem('cl_revenue_subtab');
   const savedOngoingCollapsed = localStorage.getItem('cl_ongoing_collapsed');
-  ZAPIER_WEBHOOK = hook || DEFAULT_ZAPIER_WEBHOOK;
-  document.getElementById('zapierWebhook').value = ZAPIER_WEBHOOK;
   if (savedTab === 'bookings' || savedTab === 'revenue' || savedTab === 'customers' || savedTab === 'kpi') currentTab = savedTab;
   if (BOOKINGS_SUBTABS.some(t => t.key === savedSubTab)) bookingsSubTab = savedSubTab;
   if (REVENUE_SUBTABS.some(t => t.key === savedRevenueSubTab)) revenueSubTab = savedRevenueSubTab;
