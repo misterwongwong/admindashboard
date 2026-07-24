@@ -469,6 +469,9 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 // (e.g. to point at a test hook), but defaults here so it works with nothing typed in.
 const DEFAULT_ZAPIER_WEBHOOK = 'https://hooks.zapier.com/hooks/catch/28343750/44ffc6f/';
 
+// Service tax on rental services, per the business's confirmed rate (2026-07-24).
+const SST_RATE = 0.06;
+
 let SUPA_URL = SUPABASE_URL;
 let SUPA_KEY = SUPABASE_ANON_KEY;
 let ZAPIER_WEBHOOK = DEFAULT_ZAPIER_WEBHOOK;
@@ -510,6 +513,13 @@ const ALL_BOOKINGS_COLUMNS = {
 
 function fmtMoney(n) { return 'RM ' + Number(n || 0).toLocaleString(); }
 function statusClass(s) { return 'status-pill status-' + (s || ''); }
+// Shared by every row template that shows a quote — flags that the total
+// includes SST now, instead of each place quietly showing a different number
+// than before with no explanation.
+function quoteDetailHtml(quote) {
+  if (!quote.weekdays && !quote.weekends) return '';
+  return `<span class="quote-detail">${quote.weekdays} wkdy + ${quote.weekends} wknd + 6% SST</span>`;
+}
 // Every value that ultimately traces back to customer-submitted input (company,
 // contact name, notes, etc.) goes through here before hitting innerHTML — a
 // stray "<" or "&" from a customer field would otherwise break row rendering
@@ -522,9 +532,11 @@ function escapeHtml(str) {
 // how start_date/end_date (plain date columns) already print elsewhere.
 function fmtDate(iso) { return iso ? iso.slice(0, 10) : '—'; }
 
-// Count weekday vs weekend days between two dates (inclusive) and compute quote
+// Count weekday vs weekend days between two dates (inclusive) and compute quote.
+// total is tax-inclusive (subtotal + SST) — the real amount owed, not just the
+// pre-tax rental cost, since that's what a quotation actually needs to show.
 function calcQuote(startDate, endDate, weekdayRate, weekendRate) {
-  if (!startDate || !endDate) return { total: 0, weekdays: 0, weekends: 0 };
+  if (!startDate || !endDate) return { total: 0, subtotal: 0, sstAmount: 0, weekdays: 0, weekends: 0 };
   const start = new Date(startDate);
   const end = new Date(endDate);
   let weekdays = 0, weekends = 0;
@@ -537,7 +549,9 @@ function calcQuote(startDate, endDate, weekdayRate, weekendRate) {
   }
   const wr = Number(weekdayRate || 0);
   const we = Number(weekendRate || 0);
-  return { total: (weekdays * wr) + (weekends * we), weekdays, weekends };
+  const subtotal = (weekdays * wr) + (weekends * we);
+  const sstAmount = subtotal * SST_RATE;
+  return { total: subtotal + sstAmount, subtotal, sstAmount, weekdays, weekends };
 }
 
 async function apiGet(path) {
@@ -618,7 +632,24 @@ function buildNotifyPayload(b) {
     end_date: b.end_date,
     duration_days: b.duration,
     quotation_total: b.quote.total,
-    currency: 'MYR'
+    currency: 'MYR',
+    // Requested by the Zapier/quotations-table integration (2026-07-24) —
+    // exact field names as specified, for the quotations table + SST-compliant
+    // quotation document. customer_id/space_id are real DB ids, not names, so
+    // that table can properly link back to customers/spaces.
+    customer_id: b.customerId,
+    space_id: b.spaceId,
+    company_name: b.company,
+    contact_no: b.phone,
+    preferred_venue: b.preferredHub,
+    preferred_space: b.preferredSpace,
+    weekday_price: b.weekdayPrice,
+    weekend_price: b.weekendPrice,
+    weekday_count: b.quote.weekdays,
+    weekend_count: b.quote.weekends,
+    subtotal: b.quote.subtotal,
+    sst_amount: b.quote.sstAmount,
+    total_amount: b.quote.total
   };
 }
 
@@ -650,10 +681,10 @@ async function loadAll() {
     // no confirmed-hub counterpart column but still needs the hint to resolve).
     const bookingData = await apiGet(
       'bookings?select=id,start_date,end_date,status,purpose,price,created_at,updated_at,' +
-      'spaces!space_id(name,weekday_price,weekend_price,hubs(name)),' +
+      'spaces!space_id(id,name,weekday_price,weekend_price,hubs(name)),' +
       'preferred_hub:hubs!preferred_hub_id(name),' +
       'preferred_space:spaces!preferred_space_id(name),' +
-      'customers(name,company,email,phone,address,registration_no,sst_number,sst_registered,notes)' +
+      'customers(id,name,company,email,phone,address,registration_no,sst_number,sst_registered,notes)' +
       '&order=created_at.desc'
     );
     bookings = bookingData.map(b => {
@@ -665,6 +696,10 @@ async function loadAll() {
         ? (quote.weekdays + quote.weekends) : 0;
       return {
         id: b.id,
+        customerId: cust.id || '',
+        spaceId: space.id || '',
+        weekdayPrice: Number(space.weekday_price || 0),
+        weekendPrice: Number(space.weekend_price || 0),
         customer: cust.name || '—',
         company: cust.company || '',
         pic: cust.name || '',
@@ -908,8 +943,7 @@ function actionSelect(booking) {
 // Inquiry rows: full detail + Accept / Reject. Reject swaps in an inline
 // required-reason box (tracked by rejectingId) instead of submitting immediately.
 function inquiryRowHtml(b) {
-  const quoteDetail = (b.quote.weekdays || b.quote.weekends)
-    ? `<span class="quote-detail">${b.quote.weekdays} wkdy + ${b.quote.weekends} wknd</span>` : '';
+  const quoteDetail = quoteDetailHtml(b.quote);
   const actionCell = (rejectingId === b.id)
     ? `<div class="reject-box">
         <input class="reject-reason" data-id="${b.id}" type="text" placeholder="Reason for rejection (required)" />
@@ -938,8 +972,7 @@ function inquiryRowHtml(b) {
 // Pending rows: accepted inquiries awaiting form + docs. Shows the status-change
 // dropdown, plus a notification-failed warning + Resend if the webhook didn't land.
 function pendingRowHtml(b) {
-  const quoteDetail = (b.quote.weekdays || b.quote.weekends)
-    ? `<span class="quote-detail">${b.quote.weekdays} wkdy + ${b.quote.weekends} wknd</span>` : '';
+  const quoteDetail = quoteDetailHtml(b.quote);
   const warn = notifyPayloads[b.id]
     ? `<span class="notify-warn">Accepted — notification failed.<button class="resend-btn" data-id="${b.id}">Resend</button></span>`
     : '';
@@ -955,8 +988,7 @@ function pendingRowHtml(b) {
 }
 
 function rowHtml(b) {
-  const quoteDetail = (b.quote.weekdays || b.quote.weekends)
-    ? `<span class="quote-detail">${b.quote.weekdays} wkdy + ${b.quote.weekends} wknd</span>` : '';
+  const quoteDetail = quoteDetailHtml(b.quote);
   return `<tr>
     <td>${escapeHtml(b.customer)}${b.company ? '<br><span class="quote-detail">' + escapeHtml(b.company) + '</span>' : ''}</td>
     <td>${escapeHtml(b.hub)}<br><span class="quote-detail">${escapeHtml(b.space)}</span></td>
@@ -970,8 +1002,7 @@ function rowHtml(b) {
 // All-bookings row: every column, no per-row actions (this table is for
 // browsing/searching the full history, not for workflow transitions).
 function allBookingRowHtml(b) {
-  const quoteDetail = (b.quote.weekdays || b.quote.weekends)
-    ? `<span class="quote-detail">${b.quote.weekdays} wkdy + ${b.quote.weekends} wknd</span>` : '';
+  const quoteDetail = quoteDetailHtml(b.quote);
   return `<tr>
     <td>${escapeHtml(b.company) || '—'}<br><span class="quote-detail">${escapeHtml(b.customer)}</span></td>
     <td>${escapeHtml(b.eventType)}</td>
@@ -1252,7 +1283,8 @@ function openInquiryDetail(bookingId) {
   if (!b) return;
 
   const quoteBreakdown = (b.quote.weekdays || b.quote.weekends)
-    ? `${b.quote.weekdays} weekday day(s) + ${b.quote.weekends} weekend day(s) = ${fmtMoney(b.quote.total)}`
+    ? `${b.quote.weekdays} weekday day(s) + ${b.quote.weekends} weekend day(s) — ` +
+      `Subtotal ${fmtMoney(b.quote.subtotal)} + SST (6%) ${fmtMoney(b.quote.sstAmount)} = ${fmtMoney(b.quote.total)}`
     : fmtMoney(b.quote.total);
   const sst = b.sst_registered ? escapeHtml(b.sst_number || 'Registered, no. on file') : 'Not registered';
 
