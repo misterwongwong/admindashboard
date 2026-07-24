@@ -338,6 +338,13 @@
   <div id="submittedList"></div>
   </div>
 
+  <div id="subtabAgreements" class="tab-panel">
+  <p class="section-title">Leasing agreements</p>
+  <p class="section-sub">Confirmed bookings with a leasing agreement in progress. Approve to send it for management + customer signature, or Amend to send it back for changes. Everything past "Approve" (SignWell sending, signing) happens automatically — this view just tracks where each one stands.</p>
+  <div id="agreementsEmpty" class="empty-state">No leasing agreements yet.</div>
+  <div id="agreementsList"></div>
+  </div>
+
   <div id="subtabOngoing" class="tab-panel">
   <button class="section-title collapsible-toggle" id="ongoingToggle" type="button">
     <span id="ongoingToggleLabel">Ongoing bookings</span>
@@ -363,13 +370,6 @@
     <span><i style="background:#f3d9d7"></i>Rejected</span>
   </div>
   </div>
-  </div>
-
-  <div id="subtabAgreements" class="tab-panel">
-  <p class="section-title">Leasing agreements</p>
-  <p class="section-sub">Confirmed bookings with a leasing agreement in progress. Approve to send it for management + customer signature, or Amend to send it back for changes. Everything past "Approve" (SignWell sending, signing) happens automatically — this view just tracks where each one stands.</p>
-  <div id="agreementsEmpty" class="empty-state">No leasing agreements yet.</div>
-  <div id="agreementsList"></div>
   </div>
 
   <div id="subtabAll" class="tab-panel">
@@ -1465,8 +1465,8 @@ const BOOKINGS_SUBTABS = [
   { key: 'inquiries', label: 'Incoming inquiries' },
   { key: 'pending', label: 'Pending' },
   { key: 'submitted', label: 'Submitted' },
-  { key: 'ongoing', label: 'Ongoing' },
   { key: 'agreements', label: 'Agreements' },
+  { key: 'ongoing', label: 'Ongoing' },
   { key: 'all', label: 'All bookings' }
 ];
 
@@ -1474,7 +1474,7 @@ function updateBookingsSubTabUI() {
   document.querySelectorAll('#bookingsSubTabs .tab-btn').forEach(btn => {
     btn.classList.toggle('active', btn.getAttribute('data-subtab') === bookingsSubTab);
   });
-  ['Inquiries', 'Pending', 'Submitted', 'Ongoing', 'Agreements', 'All'].forEach(key => {
+  ['Inquiries', 'Pending', 'Submitted', 'Agreements', 'Ongoing', 'All'].forEach(key => {
     document.getElementById('subtab' + key).classList.toggle('active', bookingsSubTab === key.toLowerCase());
   });
 }
