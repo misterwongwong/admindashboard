@@ -14,7 +14,7 @@
   }
   .header { background: #0f6e56; color: white; padding: 26px 32px; }
   .header h1 { margin: 0 0 4px; font-size: 25px; font-weight: 600; }
-  .header p { margin: 0; font-size: 13.5px; color: #d5efe7; max-width: 680px; }
+  .header p { margin: 0; font-size: 13px; color: #d5efe7; max-width: 680px; }
   .container { max-width: 1180px; margin: 0 auto; padding: 22px 32px 64px; }
 
   .config-bar {
@@ -61,11 +61,18 @@
 
   .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 26px; }
   .metric-card { background: white; border: 1px solid #e6e6e1; border-radius: 10px; padding: 15px 18px; }
-  .metric-card p.label { margin: 0 0 6px; font-size: 11.5px; color: #6b6b66; text-transform: uppercase; letter-spacing: 0.03em; }
+  .metric-card p.label { margin: 0 0 6px; font-size: 11px; color: #6b6b66; text-transform: uppercase; letter-spacing: 0.03em; }
   .metric-card p.value { margin: 0; font-size: 23px; font-weight: 600; }
 
   .section-title { font-size: 16px; font-weight: 600; margin: 30px 0 6px; }
   .section-sub { font-size: 13px; color: #6b6b66; margin: 0 0 12px; }
+  /* A standalone sub-heading not preceded by its own .section-title (e.g. a
+     second chart title further down the same tab) needs the same gap above
+     that .section-title normally provides. */
+  .section-sub.spaced { margin-top: 18px; }
+  /* .card has no default padding — table cells provide their own via th/td.
+     Non-table card content (the revenue chart) needs it added explicitly. */
+  .card-padded { padding: 16px 18px; }
 
   .card { background: white; border: 1px solid #e6e6e1; border-radius: 10px; overflow-x: auto; }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
@@ -83,8 +90,8 @@
   .quote { font-weight: 600; white-space: nowrap; }
   .quote-detail { font-size: 11px; color: #9a9a94; font-weight: 400; }
 
-  .action-select { padding: 6px 8px; border: 1px solid #d8d8d3; border-radius: 6px; font-size: 12.5px; background: white; cursor: pointer; }
-  .accept-btn { padding: 7px 16px; border: none; border-radius: 6px; font-size: 12.5px; background: #0f6e56; color: white; cursor: pointer; font-weight: 500; }
+  .action-select { padding: 6px 8px; border: 1px solid #d8d8d3; border-radius: 6px; font-size: 12px; background: white; cursor: pointer; }
+  .accept-btn { padding: 7px 16px; border: none; border-radius: 6px; font-size: 12px; background: #0f6e56; color: white; cursor: pointer; font-weight: 500; }
   .accept-btn:hover { background: #0c5a46; }
   .accept-btn:disabled { background: #a9c9bf; cursor: default; }
 
@@ -99,17 +106,17 @@
 
   /* Accept / Reject controls on inquiry rows */
   .btn-row { display: flex; gap: 6px; }
-  .reject-btn { padding: 7px 14px; border: 1px solid #d8a3a0; border-radius: 6px; font-size: 12.5px; background: white; color: #a3312d; cursor: pointer; font-weight: 500; }
+  .reject-btn { padding: 7px 14px; border: 1px solid #d8a3a0; border-radius: 6px; font-size: 12px; background: white; color: #a3312d; cursor: pointer; font-weight: 500; }
   .reject-btn:hover { background: #fbdede; }
   .accept-btn.danger { background: #a3312d; }
   .accept-btn.danger:hover { background: #8a2723; }
   .reject-box { display: flex; flex-direction: column; gap: 6px; min-width: 190px; }
-  .reject-box input { padding: 6px 8px; border: 1px solid #d8d8d3; border-radius: 6px; font-size: 12.5px; }
+  .reject-box input { padding: 6px 8px; border: 1px solid #d8d8d3; border-radius: 6px; font-size: 12px; }
   .reject-actions { display: flex; gap: 6px; align-items: center; }
-  .link-btn { background: none; border: none; color: #6b6b66; font-size: 12.5px; cursor: pointer; text-decoration: underline; padding: 6px 4px; }
+  .link-btn { background: none; border: none; color: #6b6b66; font-size: 12px; cursor: pointer; text-decoration: underline; padding: 6px 4px; }
 
   /* Webhook notification warning */
-  .notify-warn { display: block; margin-top: 6px; font-size: 11.5px; color: #a3312d; }
+  .notify-warn { display: block; margin-top: 6px; font-size: 11px; color: #a3312d; }
   .resend-btn { margin-left: 6px; padding: 2px 9px; border: 1px solid #d8a3a0; border-radius: 5px; background: white; color: #a3312d; cursor: pointer; font-size: 11px; }
   .resend-btn:hover { background: #fbdede; }
 
@@ -121,7 +128,7 @@
   .status-filters { display: flex; gap: 8px; flex-wrap: wrap; }
   .status-filters button {
     border: 1px solid #d8d8d3; background: white; padding: 6px 12px;
-    border-radius: 20px; font-size: 12.5px; cursor: pointer; color: #333;
+    border-radius: 20px; font-size: 12px; cursor: pointer; color: #333;
   }
   .status-filters button.active { background: #0f6e56; border-color: #0f6e56; color: white; }
   .ab-search { flex: 1; min-width: 200px; max-width: 320px; padding: 7px 10px; border: 1px solid #d8d8d3; border-radius: 6px; font-size: 13px; }
@@ -141,7 +148,7 @@
   .tabs { display: flex; gap: 22px; border-bottom: 1px solid #e6e6e1; margin: 4px 0 22px; }
   .tab-btn {
     border: none; background: none; padding: 10px 2px; margin-bottom: -1px;
-    font-size: 14.5px; font-weight: 600; color: #6b6b66; cursor: pointer;
+    font-size: 14px; font-weight: 600; color: #6b6b66; cursor: pointer;
     border-bottom: 2px solid transparent;
   }
   .tab-btn:hover { color: #333; }
@@ -149,12 +156,22 @@
   .tab-panel { display: none; }
   .tab-panel.active { display: block; }
 
+  /* Ongoing bookings — collapsed by default (it's the longest section and the
+     least time-sensitive: mostly historical record, not a to-do list). */
+  .collapsible-toggle {
+    display: inline-flex; align-items: center; gap: 6px; font-family: inherit;
+    background: none; border: none; padding: 0; cursor: pointer;
+  }
+  .collapsible-toggle:hover { color: #0f6e56; }
+  .collapse-arrow { font-size: 11px; color: #6b6b66; }
+  .collapsible-content.collapsed { display: none; }
+
   /* Bookings sub-tabs (Incoming / Pending / Ongoing / All) — same visual
      pattern as the main Bookings/Revenue/Customers tabs above, one step
      down in the hierarchy (smaller text, tighter spacing) so it reads as
      "inside Bookings" rather than a second row of top-level tabs. */
   .subtabs { margin: 4px 0 20px; gap: 18px; }
-  .subtabs .tab-btn { font-size: 13.5px; padding: 8px 2px; }
+  .subtabs .tab-btn { font-size: 13px; padding: 8px 2px; }
 
   /* Customer detail pop-out */
   .modal-overlay {
@@ -166,18 +183,18 @@
     background: white; border-radius: 12px; max-width: 540px; width: 100%;
     max-height: 85vh; overflow-y: auto; padding: 24px 26px; position: relative;
   }
-  .modal-box h3 { margin: 0 0 16px; font-size: 17px; }
+  .modal-box h3 { margin: 0 0 16px; font-size: 16px; }
   .modal-close {
     position: absolute; top: 14px; right: 16px; border: none; background: none;
     font-size: 22px; line-height: 1; cursor: pointer; color: #9a9a94;
   }
   .modal-close:hover { color: #333; }
-  .modal-field { margin-bottom: 11px; font-size: 13.5px; }
+  .modal-field { margin-bottom: 11px; font-size: 13px; }
   .modal-field .field-label {
     display: block; margin-bottom: 2px; font-size: 11px; color: #6b6b66;
     text-transform: uppercase; letter-spacing: 0.03em;
   }
-  .modal-bookings-table { width: 100%; border-collapse: collapse; font-size: 12.5px; margin-top: 6px; }
+  .modal-bookings-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 6px; }
   .modal-bookings-table th, .modal-bookings-table td { padding: 6px 8px; border-bottom: 1px solid #f0f0ed; text-align: left; }
 </style>
 </head>
@@ -247,8 +264,12 @@
   </div>
 
   <div id="subtabOngoing" class="tab-panel">
-  <p class="section-title">Ongoing bookings</p>
+  <button class="section-title collapsible-toggle" id="ongoingToggle" type="button">
+    <span id="ongoingToggleLabel">Ongoing bookings</span>
+    <span class="collapse-arrow" id="ongoingArrow">▸</span>
+  </button>
   <p class="section-sub">Confirmed, completed, cancelled and rejected bookings.</p>
+  <div id="ongoingContent" class="collapsible-content collapsed">
   <div class="card">
     <table id="ongoingTable" style="display:none;">
       <thead>
@@ -265,6 +286,7 @@
     <span><i style="background:#dcefe4"></i>Completed</span>
     <span><i style="background:#eaeae7"></i>Cancelled</span>
     <span><i style="background:#f3d9d7"></i>Rejected</span>
+  </div>
   </div>
   </div>
 
@@ -306,13 +328,13 @@
 
   <div class="metrics" id="revenueSummary"></div>
 
-  <p class="section-sub" style="margin-top:18px;">Monthly trend — confirmed + completed bookings, by start date</p>
-  <div class="card" style="padding:16px 18px;">
+  <p class="section-sub spaced">Monthly trend — confirmed + completed bookings, by start date</p>
+  <div class="card card-padded">
     <div id="revenueTrend" class="revenue-trend"></div>
     <div id="revenueTrendEmpty" class="empty-state" style="display:none;">No revenue data yet.</div>
   </div>
 
-  <p class="section-sub" style="margin-top:18px;">Breakdown by hub &amp; space</p>
+  <p class="section-sub spaced">Breakdown by hub &amp; space</p>
   <div class="card">
     <table id="perfTable" style="display:none;">
       <thead>
@@ -385,6 +407,7 @@ let activeHub = 'All hubs';
 let activeSpace = 'All spaces';
 let currentTab = 'bookings';   // 'bookings' | 'revenue' — purely a display toggle, render() still updates both
 let bookingsSubTab = 'inquiries';   // which of the 4 sections is showing inside the Bookings tab
+let ongoingCollapsed = true;    // Ongoing bookings starts collapsed — longest section, least time-sensitive
 let rejectingId = null;         // inquiry id currently showing the inline reject-reason box
 const notifyPayloads = {};      // bookingId -> payload, present only while a webhook send is outstanding/failed
 
@@ -1090,6 +1113,17 @@ function renderBookingsSubTabs(counts) {
   updateBookingsSubTabUI();
 }
 
+function updateOngoingCollapseUI() {
+  document.getElementById('ongoingContent').classList.toggle('collapsed', ongoingCollapsed);
+  document.getElementById('ongoingArrow').textContent = ongoingCollapsed ? '▸' : '▾';
+}
+
+function toggleOngoingCollapse() {
+  ongoingCollapsed = !ongoingCollapsed;
+  localStorage.setItem('cl_ongoing_collapsed', ongoingCollapsed ? '1' : '0');
+  updateOngoingCollapseUI();
+}
+
 function render() {
   const filtered = activeHub === 'All hubs' ? bookings : bookings.filter(b => b.hub === activeHub);
 
@@ -1098,6 +1132,8 @@ function render() {
   const ongoing = filtered.filter(b => ['confirmed', 'completed', 'cancelled', 'rejected'].includes(b.status));
 
   renderBookingsSubTabs({ inquiries: inquiries.length, pending: pending.length, ongoing: ongoing.length });
+  document.getElementById('ongoingToggleLabel').textContent =
+    'Ongoing bookings' + (ongoing.length ? ` (${ongoing.length})` : '');
 
   // Metrics
   const totalInquiries = filtered.filter(b => b.status === 'inquired').length;
@@ -1331,6 +1367,7 @@ document.getElementById('customerSearch').addEventListener('input', (e) => {
   customerSearchQuery = e.target.value;
   render();
 });
+document.getElementById('ongoingToggle').addEventListener('click', toggleOngoingCollapse);
 
 // Customer + inquiry modals: close via the × button, clicking the backdrop, or Escape.
 document.getElementById('customerModalClose').addEventListener('click', closeCustomerModal);
@@ -1351,12 +1388,15 @@ document.addEventListener('keydown', (e) => {
   const hook = localStorage.getItem('cl_zapier_webhook');
   const savedTab = localStorage.getItem('cl_active_tab');
   const savedSubTab = localStorage.getItem('cl_bookings_subtab');
+  const savedOngoingCollapsed = localStorage.getItem('cl_ongoing_collapsed');
   ZAPIER_WEBHOOK = hook || DEFAULT_ZAPIER_WEBHOOK;
   document.getElementById('zapierWebhook').value = ZAPIER_WEBHOOK;
   if (savedTab === 'bookings' || savedTab === 'revenue' || savedTab === 'customers') currentTab = savedTab;
   if (BOOKINGS_SUBTABS.some(t => t.key === savedSubTab)) bookingsSubTab = savedSubTab;
+  if (savedOngoingCollapsed !== null) ongoingCollapsed = savedOngoingCollapsed === '1';
   updateTabUI();   // independent of connection state — the tab shell shows immediately
   updateBookingsSubTabUI();
+  updateOngoingCollapseUI();
   loadAll();
 })();
 </script>
