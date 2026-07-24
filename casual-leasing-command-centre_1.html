@@ -32,7 +32,25 @@
   }
   .status-msg { font-size: 13px; color: #6b6b66; margin: 0 0 18px; }
 
-  .toolbar { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin: 18px 0 14px; }
+  /* Hub/space switcher — the first control row on the page, directly under
+     the header, since which hub you're looking at governs almost everything
+     below it (not a minor toolbar option). */
+  .hub-toolbar {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 12px;
+    background: white; border: 1px solid #e6e6e1; border-radius: 10px;
+    padding: 12px 14px; margin: 18px 0 14px;
+  }
+  .hub-toolbar-label {
+    font-size: 12px; font-weight: 600; color: #6b6b66; text-transform: uppercase;
+    letter-spacing: 0.03em; white-space: nowrap;
+  }
+  .hub-space-group { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex: 1; }
+  /* Greyed out + non-interactive on the Customers tab, where hub/space don't
+     apply (a customer can have bookings across multiple hubs) — see
+     updateHubToolbarForTab() in the script below. */
+  .hub-space-group.disabled { opacity: 0.4; pointer-events: none; }
+  .hub-toolbar-note { font-size: 12px; color: #6b6b66; font-style: italic; display: none; white-space: nowrap; }
+  .hub-toolbar-note.visible { display: inline; }
   .hub-filters { display: flex; gap: 8px; flex-wrap: wrap; }
   .hub-filters button {
     border: 1px solid #d8d8d3; background: white; padding: 7px 13px;
@@ -172,6 +190,16 @@
 
 <div class="container">
 
+  <div class="hub-toolbar">
+    <span class="hub-toolbar-label">Viewing</span>
+    <div class="hub-space-group" id="hubSpaceGroup">
+      <div class="hub-filters" id="hubFilters"></div>
+      <select class="space-select" id="spaceFilterSelect"></select>
+    </div>
+    <span class="hub-toolbar-note" id="hubToolbarNote">Not used on the Customers tab</span>
+    <button class="refresh-btn" id="refreshBtn">↻ Refresh</button>
+  </div>
+
   <div class="config-bar">
     <input id="zapierWebhook" type="text" placeholder="Zapier Catch Hook URL (optional — sent on Accept)" />
     <button id="connectBtn">Save webhook</button>
@@ -179,14 +207,6 @@
   <p class="status-msg" id="statusMsg">Connecting…</p>
 
   <div class="metrics" id="metrics"></div>
-
-  <div class="toolbar">
-    <div class="hub-filters" id="hubFilters"></div>
-    <div style="display:flex; gap:10px; align-items:center;">
-      <select class="space-select" id="spaceFilterSelect"></select>
-      <button class="refresh-btn" id="refreshBtn">↻ Refresh</button>
-    </div>
-  </div>
 
   <div class="tabs" id="mainTabs">
     <button class="tab-btn active" data-tab="bookings">Bookings</button>
@@ -1014,6 +1034,16 @@ function updateTabUI() {
   document.querySelectorAll('#mainTabs .tab-btn').forEach(btn => {
     btn.classList.toggle('active', btn.getAttribute('data-tab') === currentTab);
   });
+  updateHubToolbarForTab();
+}
+
+// Hub/space only apply to Bookings and Revenue — a customer can span multiple
+// hubs, so filtering by hub doesn't make sense on the Customers tab. Grey the
+// controls out and explain why, instead of leaving them active but silently ignored.
+function updateHubToolbarForTab() {
+  const isCustomers = currentTab === 'customers';
+  document.getElementById('hubSpaceGroup').classList.toggle('disabled', isCustomers);
+  document.getElementById('hubToolbarNote').classList.toggle('visible', isCustomers);
 }
 
 function switchTab(name) {
