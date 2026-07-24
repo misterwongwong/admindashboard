@@ -135,6 +135,20 @@
   .view-doc-btn:hover { background: #f4f4f0; }
   .view-doc-btn:disabled { color: #9a9a94; cursor: default; }
 
+  /* Agreement status badges — distinct from booking status-pill colors so the
+     two lifecycles are never visually confused. */
+  .ag-status { display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 500; white-space: nowrap; }
+  .ag-draft, .ag-amended { background: #eaeae7; color: #6b6b66; }
+  .ag-pending_review { background: #e8e0f7; color: #5b3a9e; }
+  .ag-approved, .ag-awaiting_management_signature, .ag-awaiting_customer_signature { background: #fdf1cf; color: #8a6d1a; }
+  .ag-completed { background: #dcefe4; color: #1f6b45; }
+
+  .journey-toggle { background: none; border: none; color: #6b6b66; font-size: 12px; cursor: pointer; text-decoration: underline; padding: 4px 0; margin-top: 6px; }
+  .journey-list { list-style: none; margin: 8px 0 0; padding: 0; border-left: 2px solid #e6e6e1; }
+  .journey-list li { position: relative; padding: 0 0 10px 16px; font-size: 12px; color: #333; }
+  .journey-list li::before { content: ''; position: absolute; left: -5px; top: 3px; width: 8px; height: 8px; border-radius: 50%; background: #0f6e56; }
+  .journey-list .journey-time { color: #9a9a94; margin-left: 6px; }
+
   /* Space filter (extends the hub filter in the toolbar) */
   .space-select { padding: 7px 10px; border: 1px solid #d8d8d3; border-radius: 6px; font-size: 13px; background: white; color: #333; cursor: pointer; }
 
@@ -349,6 +363,13 @@
     <span><i style="background:#f3d9d7"></i>Rejected</span>
   </div>
   </div>
+  </div>
+
+  <div id="subtabAgreements" class="tab-panel">
+  <p class="section-title">Leasing agreements</p>
+  <p class="section-sub">Confirmed bookings with a leasing agreement in progress. Approve to send it for management + customer signature, or Amend to send it back for changes. Everything past "Approve" (SignWell sending, signing) happens automatically — this view just tracks where each one stands.</p>
+  <div id="agreementsEmpty" class="empty-state">No leasing agreements yet.</div>
+  <div id="agreementsList"></div>
   </div>
 
   <div id="subtabAll" class="tab-panel">
@@ -608,6 +629,56 @@ function updateBookingStatus(bookingId, newStatus, extraFields) {
   return patchBooking(bookingId, Object.assign({ status: newStatus }, extraFields));
 }
 
+async function patchAgreement(agreementId, fields) {
+  const res = await fetch(SUPA_URL + '/rest/v1/agreements?id=eq.' + agreementId, {
+    method: 'PATCH',
+    headers: {
+      apikey: SUPA_KEY,
+      Authorization: 'Bearer ' + SUPA_KEY,
+      'Content-Type': 'application/json',
+      Prefer: 'return=minimal'
+    },
+    body: JSON.stringify(fields)
+  });
+  if (!res.ok) throw new Error('Update failed: ' + res.status);
+}
+
+// Append-only audit/journey trail — one row per leasing-agreement lifecycle
+// event (approved, sent to management, signed, sent to customer, etc). The
+// Approve/Amend buttons below write to it directly; SignWell/Zapier-side
+// events land in the same table once Nabila's automation is live, so the
+// journey timeline just shows more rows over time with no code changes needed.
+async function insertNotificationLogEntry(bookingId, event, payload) {
+  const res = await fetch(SUPA_URL + '/rest/v1/notification_log', {
+    method: 'POST',
+    headers: {
+      apikey: SUPA_KEY,
+      Authorization: 'Bearer ' + SUPA_KEY,
+      'Content-Type': 'application/json',
+      Prefer: 'return=minimal'
+    },
+    body: JSON.stringify({ booking_id: bookingId, event: event, payload: payload || {} })
+  });
+  if (!res.ok) throw new Error('Log failed: ' + res.status);
+}
+
+// Cache of fetched journey rows per booking, so re-opening an already-viewed
+// timeline doesn't re-fetch. Cleared implicitly on page reload.
+const journeyCache = {};
+
+async function loadJourney(bookingId) {
+  if (journeyCache[bookingId]) return journeyCache[bookingId];
+  const rows = await apiGet('notification_log?select=*&booking_id=eq.' + bookingId + '&order=sent_at.asc');
+  journeyCache[bookingId] = rows;
+  return rows;
+}
+
+// 'la_approved_sent_to_management' -> 'La approved sent to management'
+function humanizeEventName(event) {
+  const s = String(event || '').replace(/_/g, ' ');
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
 // The Zapier notification now fires server-side (a Supabase database trigger
 // on bookings.status -> 'pending', see migration_06) instead of from this
 // browser — that sidesteps a CORS block Zapier's endpoint has for this site's
@@ -631,7 +702,8 @@ async function loadAll() {
       'preferred_hub:hubs!preferred_hub_id(name),' +
       'preferred_space:spaces!preferred_space_id(name),' +
       'customers(id,name,company,email,phone,address,registration_no,sst_number,sst_registered,notes,tin_number,msic_code,einvoice_required,tax_exempted),' +
-      'booking_documents(id,doc_type,file_url,status,uploaded_at)' +
+      'booking_documents(id,doc_type,file_url,status,uploaded_at),' +
+      'agreements(id,agreement_type,status,doc_url,signed_date,management_email,customer_email,management_signed_at,customer_signed_at)' +
       '&order=created_at.desc'
     );
     bookings = bookingData.map(b => {
@@ -662,6 +734,7 @@ async function loadAll() {
         einvoice_required: !!cust.einvoice_required,
         tax_exempted: !!cust.tax_exempted,
         documents: b.booking_documents || [],
+        agreement: (b.agreements && b.agreements[0]) || null,
         eventType: b.purpose || '—',
         hub: hub.name || '—',
         space: space.name || '—',
@@ -991,6 +1064,44 @@ function submittedCardHtml(b) {
       ${docsHtml}
     </div>
     ${actionCell}
+  </div>`;
+}
+
+function agreementStatusLabel(status) {
+  return String(status || '').split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+}
+
+// Leasing-agreement card: one per confirmed booking that has an agreements
+// row (created by Nabila's Zapier automation once a booking is confirmed —
+// not by this dashboard). Approve/Amend only apply while status is
+// 'pending_review'; every later stage (sent to management, signed, sent to
+// customer, completed) is driven by SignWell/Zapier and shown here read-only
+// via the journey timeline.
+function agreementCardHtml(b) {
+  const a = b.agreement;
+  const canAct = a.status === 'pending_review';
+  const docLink = a.doc_url
+    ? `<a class="link-btn" href="${escapeHtml(a.doc_url)}" target="_blank" rel="noopener">View agreement ↗</a>`
+    : '';
+  const actions = canAct
+    ? `<div class="btn-row">
+        <button class="approve-agreement-btn accept-btn" data-agreement-id="${a.id}" data-booking-id="${b.id}">Approve</button>
+        <button class="amend-agreement-btn reject-btn" data-agreement-id="${a.id}" data-booking-id="${b.id}">Amend</button>
+      </div>`
+    : '';
+  return `<div class="review-card">
+    <div class="review-head">
+      <div>
+        <h3>${escapeHtml(b.company) || '—'} <span class="quote-detail">${escapeHtml(b.customer)}</span></h3>
+        <span class="quote-detail">${escapeHtml(b.eventType)} · ${escapeHtml(b.hub)} / ${escapeHtml(b.space)} · ${escapeHtml(b.start_date)} → ${escapeHtml(b.end_date)}</span>
+      </div>
+      <div class="review-meta">
+        <span class="ag-status ag-${escapeHtml(a.status)}">${escapeHtml(agreementStatusLabel(a.status))}</span><br>${docLink}
+      </div>
+    </div>
+    ${actions}
+    <button class="journey-toggle" data-booking-id="${b.id}">View journey ▾</button>
+    <div class="journey-container" data-booking-id="${b.id}" hidden></div>
   </div>`;
 }
 
@@ -1355,6 +1466,7 @@ const BOOKINGS_SUBTABS = [
   { key: 'pending', label: 'Pending' },
   { key: 'submitted', label: 'Submitted' },
   { key: 'ongoing', label: 'Ongoing' },
+  { key: 'agreements', label: 'Agreements' },
   { key: 'all', label: 'All bookings' }
 ];
 
@@ -1362,7 +1474,7 @@ function updateBookingsSubTabUI() {
   document.querySelectorAll('#bookingsSubTabs .tab-btn').forEach(btn => {
     btn.classList.toggle('active', btn.getAttribute('data-subtab') === bookingsSubTab);
   });
-  ['Inquiries', 'Pending', 'Submitted', 'Ongoing', 'All'].forEach(key => {
+  ['Inquiries', 'Pending', 'Submitted', 'Ongoing', 'Agreements', 'All'].forEach(key => {
     document.getElementById('subtab' + key).classList.toggle('active', bookingsSubTab === key.toLowerCase());
   });
 }
@@ -1535,8 +1647,10 @@ function render() {
   const pending = filtered.filter(b => b.status === 'pending');
   const submitted = filtered.filter(b => b.status === 'submitted');
   const ongoing = filtered.filter(b => ['confirmed', 'completed', 'cancelled', 'rejected'].includes(b.status));
+  const withAgreements = filtered.filter(b => b.agreement);
+  const agreementsNeedingReview = withAgreements.filter(b => b.agreement.status === 'pending_review').length;
 
-  renderBookingsSubTabs({ inquiries: inquiries.length, pending: pending.length, submitted: submitted.length, ongoing: ongoing.length });
+  renderBookingsSubTabs({ inquiries: inquiries.length, pending: pending.length, submitted: submitted.length, ongoing: ongoing.length, agreements: agreementsNeedingReview });
   document.getElementById('ongoingToggleLabel').textContent =
     'Ongoing bookings' + (ongoing.length ? ` (${ongoing.length})` : '');
   renderRevenueSubTabs();
@@ -1592,6 +1706,17 @@ function render() {
   } else {
     subList.style.display = 'block'; subEmpty.style.display = 'none';
     subList.innerHTML = submitted.map(submittedCardHtml).join('');
+  }
+
+  // Leasing agreements
+  const agEmpty = document.getElementById('agreementsEmpty');
+  const agList = document.getElementById('agreementsList');
+  if (withAgreements.length === 0) {
+    agList.style.display = 'none'; agEmpty.style.display = 'block';
+    agEmpty.textContent = 'No leasing agreements yet.';
+  } else {
+    agList.style.display = 'block'; agEmpty.style.display = 'none';
+    agList.innerHTML = withAgreements.map(agreementCardHtml).join('');
   }
 
   // Ongoing table
@@ -1680,7 +1805,7 @@ function attachActionHandlers() {
   });
 
   // Accept button on inquiries: inquired -> pending, then notify (best-effort).
-  document.querySelectorAll('.accept-btn:not(.reject-confirm):not(.accept-submission-btn)').forEach(btn => {
+  document.querySelectorAll('.accept-btn:not(.reject-confirm):not(.accept-submission-btn):not(.approve-agreement-btn)').forEach(btn => {
     btn.addEventListener('click', (e) => acceptInquiry(e.target.getAttribute('data-id'), e.target));
   });
 
@@ -1691,8 +1816,42 @@ function attachActionHandlers() {
 
   // Reject: open the inline reason box. Shared by inquiries and submitted-for-
   // review cards — confirmReject() below doesn't care which status it came from.
-  document.querySelectorAll('.reject-btn').forEach(btn => {
+  document.querySelectorAll('.reject-btn:not(.amend-agreement-btn)').forEach(btn => {
     btn.addEventListener('click', (e) => { rejectingId = e.target.getAttribute('data-id'); render(); });
+  });
+
+  // Approve/Amend on a leasing agreement — see approveAgreement/amendAgreement below.
+  document.querySelectorAll('.approve-agreement-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => approveAgreement(
+      e.target.getAttribute('data-agreement-id'), e.target.getAttribute('data-booking-id'), e.target));
+  });
+  document.querySelectorAll('.amend-agreement-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => amendAgreement(
+      e.target.getAttribute('data-agreement-id'), e.target.getAttribute('data-booking-id'), e.target));
+  });
+
+  // Journey timeline: fetch (or reuse cached) notification_log rows on first
+  // expand, toggle visibility on every click after that.
+  document.querySelectorAll('.journey-toggle').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      const bookingId = e.target.getAttribute('data-booking-id');
+      const container = document.querySelector('.journey-container[data-booking-id="' + bookingId + '"]');
+      if (!container.hidden) { container.hidden = true; return; }
+      container.hidden = false;
+      if (container.dataset.loaded) return;
+      container.innerHTML = '<span class="quote-detail">Loading…</span>';
+      try {
+        const rows = await loadJourney(bookingId);
+        container.dataset.loaded = '1';
+        container.innerHTML = rows.length === 0
+          ? '<span class="quote-detail">No events logged yet.</span>'
+          : '<ul class="journey-list">' + rows.map(r =>
+              `<li>${escapeHtml(humanizeEventName(r.event))}<span class="journey-time">${new Date(r.sent_at).toLocaleString()}</span></li>`
+            ).join('') + '</ul>';
+      } catch (err) {
+        container.innerHTML = '<span class="quote-detail">Could not load: ' + escapeHtml(err.message) + '</span>';
+      }
+    });
   });
 
   // Reject box: cancel / confirm.
@@ -1764,6 +1923,54 @@ async function acceptSubmission(bookingId, btn) {
     return;
   }
   render();
+}
+
+// Approve a leasing agreement: pending_review -> awaiting_management_signature,
+// logged to the journey timeline. Per Nabila's spec, this doesn't call SignWell
+// directly yet — that's a separate fetch() to her Zapier webhook, to be added
+// as one more line here once that URL is ready (see TODO below). Confirmed
+// first since this kicks off an external signature request that can't be
+// undone from this dashboard.
+async function approveAgreement(agreementId, bookingId, btn) {
+  const b = bookings.find(x => x.id === bookingId);
+  const ok = confirm(
+    'Send this leasing agreement for signature (management, then ' + (b ? b.company || b.customer : 'the customer') + ')?\n\n' +
+    'This starts the SignWell signing process and can\'t be undone from this dashboard.'
+  );
+  if (!ok) return;
+  btn.disabled = true;
+  btn.textContent = 'Approving…';
+  try {
+    await patchAgreement(agreementId, { status: 'awaiting_management_signature' });
+    await insertNotificationLogEntry(bookingId, 'la_approved_sent_to_management', { agreement_id: agreementId });
+    // TODO: trigger SignWell send once Nabila's Zapier webhook URL is ready —
+    // one more line here (a fetch() POST to that URL).
+    if (b && b.agreement) b.agreement.status = 'awaiting_management_signature';
+    render();
+  } catch (err) {
+    alert('Could not approve this agreement: ' + err.message);
+    btn.disabled = false;
+    btn.textContent = 'Approve';
+  }
+}
+
+// Amend: send a leasing agreement back to draft (e.g. staff spotted something
+// wrong before approving) — no confirmation dialog, since unlike Approve this
+// doesn't kick off anything external or irreversible.
+async function amendAgreement(agreementId, bookingId, btn) {
+  const b = bookings.find(x => x.id === bookingId);
+  btn.disabled = true;
+  btn.textContent = 'Sending back…';
+  try {
+    await patchAgreement(agreementId, { status: 'draft' });
+    await insertNotificationLogEntry(bookingId, 'la_sent_back_for_amendment');
+    if (b && b.agreement) b.agreement.status = 'draft';
+    render();
+  } catch (err) {
+    alert('Could not send this agreement back for amendment: ' + err.message);
+    btn.disabled = false;
+    btn.textContent = 'Amend';
+  }
 }
 
 async function confirmReject(bookingId, btn) {
