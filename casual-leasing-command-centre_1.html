@@ -131,6 +131,13 @@
   .tab-panel { display: none; }
   .tab-panel.active { display: block; }
 
+  /* Bookings sub-tabs (Incoming / Pending / Ongoing / All) — same visual
+     pattern as the main Bookings/Revenue/Customers tabs above, one step
+     down in the hierarchy (smaller text, tighter spacing) so it reads as
+     "inside Bookings" rather than a second row of top-level tabs. */
+  .subtabs { margin: 4px 0 20px; gap: 18px; }
+  .subtabs .tab-btn { font-size: 13.5px; padding: 8px 2px; }
+
   /* Customer detail pop-out */
   .modal-overlay {
     position: fixed; inset: 0; background: rgba(20,20,18,0.45);
@@ -189,6 +196,9 @@
 
   <div id="tabBookings" class="tab-panel active">
 
+  <div class="tabs subtabs" id="bookingsSubTabs"></div>
+
+  <div id="subtabInquiries" class="tab-panel active">
   <p class="section-title">Incoming inquiries</p>
   <p class="section-sub">New inquiries submitted by customers, awaiting review. Check the details, then Accept to authorize and move into the booking pipeline.</p>
   <div class="card">
@@ -200,7 +210,9 @@
     </table>
     <div id="inquiryEmpty" class="empty-state">Connect to load inquiries.</div>
   </div>
+  </div>
 
+  <div id="subtabPending" class="tab-panel">
   <p class="section-title">Pending bookings</p>
   <p class="section-sub">Accepted inquiries awaiting the customer's booking form and required documents. An email with the form + document checklist is sent on Accept (via your Zapier hook).</p>
   <div class="card">
@@ -212,7 +224,9 @@
     </table>
     <div id="pendingEmpty" class="empty-state">Connect to load pending bookings.</div>
   </div>
+  </div>
 
+  <div id="subtabOngoing" class="tab-panel">
   <p class="section-title">Ongoing bookings</p>
   <p class="section-sub">Confirmed, completed, cancelled and rejected bookings.</p>
   <div class="card">
@@ -232,7 +246,9 @@
     <span><i style="background:#eaeae7"></i>Cancelled</span>
     <span><i style="background:#f3d9d7"></i>Rejected</span>
   </div>
+  </div>
 
+  <div id="subtabAll" class="tab-panel">
   <p class="section-title">All bookings</p>
   <p class="section-sub">Master booking database — every status, searchable, sortable. Hub/space filters above apply here too.</p>
   <div class="ab-filters">
@@ -258,6 +274,7 @@
       <tbody id="allBookingsBody"></tbody>
     </table>
     <div id="allBookingsEmpty" class="empty-state">Connect to load bookings.</div>
+  </div>
   </div>
 
   </div>
@@ -331,9 +348,15 @@
 const SUPABASE_URL = 'https://qjglewesqqnxupeklzuc.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFqZ2xld2VzcXFueHVwZWtsenVjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ3NDc0MjksImV4cCI6MjEwMDMyMzQyOX0.uZ6bjAPBUZQW3JZGzc1qgtffyTznbkrWGgDZpB66ZAk';
 
+// Production Zapier catch-hook — Zapier's own automation now owns sending the
+// acceptance email; this dashboard's only job is to hand it the inquiry data.
+// The "Zapier Catch Hook URL" box in the config bar can still override this
+// (e.g. to point at a test hook), but defaults here so it works with nothing typed in.
+const DEFAULT_ZAPIER_WEBHOOK = 'https://hooks.zapier.com/hooks/catch/28343750/44ffc6f/';
+
 let SUPA_URL = SUPABASE_URL;
 let SUPA_KEY = SUPABASE_ANON_KEY;
-let ZAPIER_WEBHOOK = '';
+let ZAPIER_WEBHOOK = DEFAULT_ZAPIER_WEBHOOK;
 let bookings = [];      // full booking rows joined with space + hub + customer + rates
 let perfRows = [];
 let customers = [];      // one row per customer, with their own bookings nested — for the Customers tab
@@ -341,6 +364,7 @@ let customerSearchQuery = '';
 let activeHub = 'All hubs';
 let activeSpace = 'All spaces';
 let currentTab = 'bookings';   // 'bookings' | 'revenue' — purely a display toggle, render() still updates both
+let bookingsSubTab = 'inquiries';   // which of the 4 sections is showing inside the Bookings tab
 let rejectingId = null;         // inquiry id currently showing the inline reject-reason box
 const notifyPayloads = {};      // bookingId -> payload, present only while a webhook send is outstanding/failed
 
@@ -450,7 +474,18 @@ async function insertNotificationLog(bookingId, event, payload) {
 
 // Everything Zapier's email template needs, so it doesn't have to look anything up.
 function buildNotifyPayload(b) {
+  const details = `${b.eventType} at ${b.hub} / ${b.space}, ${b.start_date} to ${b.end_date} ` +
+    `(${b.duration} day${b.duration === 1 ? '' : 's'}), quotation ${fmtMoney(b.quote.total)}`;
   return {
+    // Exact field names the Zapier Zap was built around — keep these so the
+    // acceptance email fires correctly regardless of how that Zap step maps fields.
+    guest_name: b.pic || b.customer,
+    guest_email: b.email,
+    inquiry_id: b.id,
+    inquiry_details: details,
+    date: new Date().toISOString(),
+    // Fuller detail alongside the above, in case a future email template wants
+    // these broken out individually instead of folded into inquiry_details.
     booking_id: b.id,
     pic_name: b.pic || b.customer,
     company: b.company,
@@ -569,9 +604,11 @@ async function loadCustomers() {
 }
 
 // Supabase URL/key are fixed constants now (see top of script) — this button
-// only saves the optional Zapier webhook, then reloads so it takes effect.
+// only saves an optional Zapier override, then reloads so it takes effect.
+// Leaving the box blank and saving reverts to the production default.
 function connect() {
-  ZAPIER_WEBHOOK = document.getElementById('zapierWebhook').value.trim();
+  const entered = document.getElementById('zapierWebhook').value.trim();
+  ZAPIER_WEBHOOK = entered || DEFAULT_ZAPIER_WEBHOOK;
   localStorage.setItem('cl_zapier_webhook', ZAPIER_WEBHOOK);
   loadAll();
 }
@@ -985,12 +1022,52 @@ function switchTab(name) {
   updateTabUI();
 }
 
+// The 4 sections that used to sit stacked in the Bookings tab, now one at a
+// time behind a sub-tab strip. 'all' has no count — it's the everything-bucket,
+// a count there would just restate filtered.length shown elsewhere.
+const BOOKINGS_SUBTABS = [
+  { key: 'inquiries', label: 'Incoming inquiries' },
+  { key: 'pending', label: 'Pending' },
+  { key: 'ongoing', label: 'Ongoing' },
+  { key: 'all', label: 'All bookings' }
+];
+
+function updateBookingsSubTabUI() {
+  document.querySelectorAll('#bookingsSubTabs .tab-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.getAttribute('data-subtab') === bookingsSubTab);
+  });
+  ['Inquiries', 'Pending', 'Ongoing', 'All'].forEach(key => {
+    document.getElementById('subtab' + key).classList.toggle('active', bookingsSubTab === key.toLowerCase());
+  });
+}
+
+// counts = { inquiries, pending, ongoing } — rebuilt every render() call, same
+// pattern as renderHubFilters/renderStatusFilterPills elsewhere in this file.
+function renderBookingsSubTabs(counts) {
+  const container = document.getElementById('bookingsSubTabs');
+  container.innerHTML = BOOKINGS_SUBTABS.map(t => {
+    const count = counts[t.key];
+    const badge = count ? ` (${count})` : '';
+    return `<button class="tab-btn" data-subtab="${t.key}">${t.label}${badge}</button>`;
+  }).join('');
+  container.querySelectorAll('button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      bookingsSubTab = btn.getAttribute('data-subtab');
+      localStorage.setItem('cl_bookings_subtab', bookingsSubTab);
+      updateBookingsSubTabUI();
+    });
+  });
+  updateBookingsSubTabUI();
+}
+
 function render() {
   const filtered = activeHub === 'All hubs' ? bookings : bookings.filter(b => b.hub === activeHub);
 
   const inquiries = filtered.filter(b => b.status === 'inquired');
   const pending = filtered.filter(b => b.status === 'pending');
   const ongoing = filtered.filter(b => ['confirmed', 'completed', 'cancelled', 'rejected'].includes(b.status));
+
+  renderBookingsSubTabs({ inquiries: inquiries.length, pending: pending.length, ongoing: ongoing.length });
 
   // Metrics
   const totalInquiries = filtered.filter(b => b.status === 'inquired').length;
@@ -1238,15 +1315,18 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') { closeCustomerModal(); closeInquiryModal(); }
 });
 
-// Auto-load saved Zapier hook + last-selected tab. Supabase connects
+// Auto-load Zapier override (if any) + last-selected tab. Supabase connects
 // immediately on every page load now — no credentials to wait on.
 (function () {
   const hook = localStorage.getItem('cl_zapier_webhook');
   const savedTab = localStorage.getItem('cl_active_tab');
-  if (hook) document.getElementById('zapierWebhook').value = hook;
-  if (hook) ZAPIER_WEBHOOK = hook;
+  const savedSubTab = localStorage.getItem('cl_bookings_subtab');
+  ZAPIER_WEBHOOK = hook || DEFAULT_ZAPIER_WEBHOOK;
+  document.getElementById('zapierWebhook').value = ZAPIER_WEBHOOK;
   if (savedTab === 'bookings' || savedTab === 'revenue' || savedTab === 'customers') currentTab = savedTab;
+  if (BOOKINGS_SUBTABS.some(t => t.key === savedSubTab)) bookingsSubTab = savedSubTab;
   updateTabUI();   // independent of connection state — the tab shell shows immediately
+  updateBookingsSubTabUI();
   loadAll();
 })();
 </script>
