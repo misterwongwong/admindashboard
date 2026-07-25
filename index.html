@@ -35,7 +35,17 @@
      indented line below — reads as "space narrows within the selected hub"
      rather than two independent, same-level filters. */
   .hub-space-group { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; flex: 1; min-width: 200px; }
-  .space-subrow { display: flex; align-items: center; gap: 6px; padding-left: 20px; }
+  /* Hidden (rather than removed) when no specific hub is selected — see the
+     'hub-picked' toggle in renderHubFilters(). Kept as a real element with a
+     collapsing max-height/opacity transition so the <select> inside it is
+     never torn down or re-created (its 'change' listener is attached once,
+     at the bottom of this script). */
+  .space-subrow {
+    display: flex; align-items: center; gap: 6px; padding-left: 20px;
+    overflow: hidden; max-height: 40px; opacity: 1;
+    transition: max-height 0.2s ease, opacity 0.15s ease, margin 0.2s ease;
+  }
+  .space-subrow.subrow-hidden { max-height: 0; opacity: 0; pointer-events: none; }
   .space-subrow-arrow { color: #9a9a94; font-size: 12px; }
   /* Greyed out + non-interactive on the Customers tab, where hub/space don't
      apply (a customer can have bookings across multiple hubs) — see
@@ -45,19 +55,37 @@
   .hub-toolbar-note.visible { display: inline; }
   .hub-filters { display: flex; gap: 8px; flex-wrap: wrap; }
   .hub-filters button {
-    border: 1px solid #d8d8d3; background: white; padding: 7px 13px;
-    border-radius: 20px; font-size: 13px; cursor: pointer; color: #333;
+    border: 1px solid #e6e6e1; background: #faf9f6; padding: 7px 16px;
+    border-radius: 999px; font-size: 13px; cursor: pointer; color: #333;
+    transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
   }
+  .hub-filters button:hover:not(.active) { background: #f0f0ec; border-color: #d8d8d3; }
   .hub-filters button.active { background: #0f6e56; border-color: #0f6e56; color: white; }
   .refresh-btn { border: 1px solid #d8d8d3; background: white; padding: 7px 14px; border-radius: 6px; font-size: 13px; cursor: pointer; }
 
-  .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 26px; }
+  .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 8px; }
   .metric-card { background: white; border: 1px solid #e6e6e1; border-radius: 10px; padding: 15px 18px; }
   .metric-card p.label { margin: 0 0 6px; font-size: 11px; color: #6b6b66; text-transform: uppercase; letter-spacing: 0.03em; }
   .metric-card p.value { margin: 0; font-size: 23px; font-weight: 600; }
   .metric-card p.metric-sub { margin: 4px 0 0; font-size: 11px; color: #6b6b66; }
   .metric-card p.metric-sub.positive { color: #1f6b45; }
   .metric-card p.metric-sub.negative { color: #a3312d; }
+
+  /* Bookings-pipeline metric cards, colour-coded by stage so the row reads
+     left-to-right as the pipeline progresses (yellow -> orange -> green). */
+  .metric-card.mc-inquiries { background: #fefbe8; border-color: #f2ecc8; }
+  .metric-card.mc-inquiries p.label, .metric-card.mc-inquiries p.value { color: #8a6d1a; }
+  .metric-card.mc-pending { background: #fdf1cf; border-color: #f0e2b0; }
+  .metric-card.mc-pending p.label, .metric-card.mc-pending p.value { color: #8a6d1a; }
+  .metric-card.mc-submitted { background: #fce6d2; border-color: #f3d3b3; }
+  .metric-card.mc-submitted p.label, .metric-card.mc-submitted p.value { color: #9c4c1a; }
+  .metric-card.mc-confirmed { background: #dcefe4; border-color: #c3e2d0; }
+  .metric-card.mc-confirmed p.label, .metric-card.mc-confirmed p.value { color: #1f6b45; }
+
+  /* Compact stand-in for the removed Completed / Rejected-Cancelled cards —
+     numbers stay reachable without giving two low-signal counts a full card
+     each. */
+  .metrics-footnote { font-size: 12px; color: #6b6b66; margin: 0 0 26px; }
 
   .section-title { font-size: 16px; font-weight: 600; margin: 30px 0 6px; }
   .section-sub { font-size: 13px; color: #6b6b66; margin: 0 0 12px; }
@@ -79,8 +107,8 @@
   .status-inquired { background: #e0ecfb; color: #1c5aa8; }
   .status-pending { background: #fdf1cf; color: #8a6d1a; }
   .status-submitted { background: #e8e0f7; color: #5b3a9e; }
-  .status-confirmed { background: #fbdede; color: #a3312d; }
-  .status-completed { background: #dcefe4; color: #1f6b45; }
+  .status-confirmed { background: #dcefe4; color: #1f6b45; }
+  .status-completed { background: #d3eef0; color: #146674; }
   .status-cancelled { background: #eaeae7; color: #6b6b66; }
 
   .quote { font-weight: 600; white-space: nowrap; }
@@ -142,6 +170,25 @@
   .ag-pending_review { background: #e8e0f7; color: #5b3a9e; }
   .ag-approved, .ag-awaiting_management_signature, .ag-awaiting_customer_signature { background: #fdf1cf; color: #8a6d1a; }
   .ag-completed { background: #dcefe4; color: #1f6b45; }
+  /* Shown instead of the real agreement-status badge when triStatusHtml(b)'s
+     allGreen is true — a readiness indicator, deliberately stricter than (and
+     independent from) bookings.status. Same green token as .ag-completed,
+     just heavier so a fully-ready booking stands out among the badges. */
+  .ag-all-clear { background: #dcefe4; color: #1f6b45; font-weight: 600; }
+
+  /* Three-box status row (leasing agreement / payment / work permit) on each
+     agreement card. Same red/yellow/green tokens across all three boxes so
+     staff read colour, not label, at a glance. */
+  .status-tri { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 12px; }
+  .status-tri-box { flex: 1 1 140px; min-width: 120px; padding: 6px 10px; border-radius: 8px; font-size: 12px; }
+  .status-tri-box .tri-label { display: block; font-size: 10px; text-transform: uppercase; letter-spacing: 0.03em; opacity: 0.75; margin-bottom: 2px; }
+  .status-tri-box .tri-value { font-weight: 600; }
+  .status-tri-box.tri-red { background: #f3d9d7; color: #8a2723; }
+  .status-tri-box.tri-yellow { background: #fdf1cf; color: #8a6d1a; }
+  .status-tri-box.tri-green { background: #dcefe4; color: #1f6b45; }
+  /* Applied to .review-card when all three boxes are green — a fully-ready
+     booking should be scannable without reading the boxes individually. */
+  .review-card.tri-all-green { border-left: 3px solid #1f6b45; }
 
   .journey-toggle { background: none; border: none; color: #6b6b66; font-size: 12px; cursor: pointer; text-decoration: underline; padding: 4px 0; margin-top: 6px; }
   .journey-list { list-style: none; margin: 8px 0 0; padding: 0; border-left: 2px solid #e6e6e1; }
@@ -291,6 +338,7 @@
   <p class="status-msg" id="statusMsg">Connecting…</p>
 
   <div class="metrics" id="metrics"></div>
+  <p class="metrics-footnote" id="metricsFootnote"></p>
 
   <div class="tabs" id="mainTabs">
     <button class="tab-btn active" data-tab="bookings">Bookings</button>
@@ -331,45 +379,11 @@
   </div>
   </div>
 
-  <div id="subtabSubmitted" class="tab-panel">
-  <p class="section-title">Submitted for review</p>
-  <p class="section-sub">Customers who've completed their company details and uploaded documents. Review everything below, then Accept (confirms the booking and kicks off the leasing agreement) or Reject (sends the customer a rejection email with your reason).</p>
-  <div id="submittedEmpty" class="empty-state">No submissions awaiting review.</div>
-  <div id="submittedList"></div>
-  </div>
-
-  <div id="subtabAgreements" class="tab-panel">
-  <p class="section-title">Leasing agreements</p>
-  <p class="section-sub">Confirmed bookings with a leasing agreement in progress. Approve to send it for management + customer signature, or Amend to send it back for changes. Everything past "Approve" (SignWell sending, signing) happens automatically — this view just tracks where each one stands.</p>
-  <div id="agreementsEmpty" class="empty-state">No leasing agreements yet.</div>
-  <div id="agreementsList"></div>
-  </div>
-
   <div id="subtabOngoing" class="tab-panel">
-  <button class="section-title collapsible-toggle" id="ongoingToggle" type="button">
-    <span id="ongoingToggleLabel">Ongoing bookings</span>
-    <span class="collapse-arrow" id="ongoingArrow">▸</span>
-  </button>
-  <p class="section-sub">Confirmed, completed, cancelled and rejected bookings.</p>
-  <div id="ongoingContent" class="collapsible-content collapsed">
-  <div class="card">
-    <table id="ongoingTable" style="display:none;">
-      <thead>
-        <tr><th>Customer</th><th>Hub / Space</th><th>Dates</th><th>Quotation</th><th>Status</th><th>Action</th></tr>
-      </thead>
-      <tbody id="ongoingBody"></tbody>
-    </table>
-    <div id="ongoingEmpty" class="empty-state">Connect to load bookings.</div>
-  </div>
-  <div class="legend">
-    <span><i style="background:#e0ecfb"></i>Inquiring</span>
-    <span><i style="background:#fdf1cf"></i>Pending</span>
-    <span><i style="background:#fbdede"></i>Confirmed</span>
-    <span><i style="background:#dcefe4"></i>Completed</span>
-    <span><i style="background:#eaeae7"></i>Cancelled</span>
-    <span><i style="background:#f3d9d7"></i>Rejected</span>
-  </div>
-  </div>
+  <p class="section-title">Ongoing</p>
+  <p class="section-sub">Bookings in flight after inquiry: submitted (documents uploaded, leasing agreement auto-generated and out for signature) through confirmed (signed, awaiting the event). Review the customer's details and documents, track the leasing agreement, and update status as the booking progresses. Reject sends the customer a rejection email with your reason; Approve/Amend on the agreement send it for signature or back for changes — everything past "Approve" (SignWell sending, signing) happens automatically and just shows here as it updates.</p>
+  <div id="agreementsEmpty" class="empty-state">No ongoing bookings yet.</div>
+  <div id="agreementsList"></div>
   </div>
 
   <div id="subtabAll" class="tab-panel">
@@ -398,6 +412,14 @@
       <tbody id="allBookingsBody"></tbody>
     </table>
     <div id="allBookingsEmpty" class="empty-state">Connect to load bookings.</div>
+  </div>
+  <div class="legend">
+    <span><i style="background:#e0ecfb"></i>Inquiring</span>
+    <span><i style="background:#fdf1cf"></i>Pending</span>
+    <span><i style="background:#dcefe4"></i>Confirmed</span>
+    <span><i style="background:#d3eef0"></i>Completed</span>
+    <span><i style="background:#eaeae7"></i>Cancelled</span>
+    <span><i style="background:#f3d9d7"></i>Rejected</span>
   </div>
   </div>
 
@@ -507,7 +529,6 @@ let activeSpace = 'All spaces';
 let currentTab = 'bookings';   // 'bookings' | 'revenue' — purely a display toggle, render() still updates both
 let bookingsSubTab = 'inquiries';   // which of the 4 sections is showing inside the Bookings tab
 let revenueSubTab = 'overview';      // which of the 3 sections is showing inside the Revenue tab
-let ongoingCollapsed = true;    // Ongoing bookings starts collapsed — longest section, least time-sensitive
 let rejectingId = null;         // inquiry id currently showing the inline reject-reason box
 const expandedCustomers = new Set();   // merged-customer keys currently expanded in the Customers list
 
@@ -697,13 +718,14 @@ async function loadAll() {
     // hubs and spaces (space_id/preferred_space_id, and preferred_hub_id has
     // no confirmed-hub counterpart column but still needs the hint to resolve).
     const bookingData = await apiGet(
-      'bookings?select=id,start_date,end_date,status,purpose,price,created_at,updated_at,submitted_at,' +
+      'bookings?select=id,start_date,end_date,status,purpose,price,created_at,updated_at,submitted_at,trade_name,' +
       'spaces!space_id(id,name,weekday_price,weekend_price,hubs(name)),' +
       'preferred_hub:hubs!preferred_hub_id(name),' +
       'preferred_space:spaces!preferred_space_id(name),' +
       'customers(id,name,company,email,phone,address,registration_no,sst_number,sst_registered,notes,tin_number,msic_code,einvoice_required,tax_exempted),' +
       'booking_documents(id,doc_type,file_url,status,uploaded_at),' +
-      'agreements(id,agreement_type,status,doc_url,signed_date,management_email,customer_email,management_signed_at,customer_signed_at)' +
+      'agreements(id,agreement_type,status,doc_url,signed_date,management_email,customer_email,management_signed_at,customer_signed_at),' +
+      'deposit_payments(id,amount,payment_date,receipt_url,verified)' +
       '&order=created_at.desc'
     );
     bookings = bookingData.map(b => {
@@ -735,6 +757,8 @@ async function loadAll() {
         tax_exempted: !!cust.tax_exempted,
         documents: b.booking_documents || [],
         agreement: (b.agreements && b.agreements[0]) || null,
+        depositPayments: b.deposit_payments || [],
+        tradeName: b.trade_name || '',
         eventType: b.purpose || '—',
         hub: hub.name || '—',
         space: space.name || '—',
@@ -903,6 +927,15 @@ function renderHubFilters() {
       render();
     });
   });
+  updateSpaceSubrowVisibility();
+}
+
+// The space dropdown only makes sense once a specific hub is picked — with
+// 'All hubs' selected, space names could collide across hubs. Purely a CSS
+// class toggle: the .space-subrow element (and the <select> inside it) is
+// never removed from the DOM, so its one-time 'change' listener stays intact.
+function updateSpaceSubrowVisibility() {
+  document.querySelector('.space-subrow').classList.toggle('subrow-hidden', activeHub === 'All hubs');
 }
 
 // Space options are scoped to the currently selected hub, so this rebuilds
@@ -1004,17 +1037,112 @@ function pendingRowHtml(b) {
 // Certificate" only actually gets uploaded/required when the customer answered
 // tax_exempted = yes — shown here regardless so staff can see it's N/A, not
 // silently missing.
-const EXPECTED_DOC_TYPES = ['SSM', 'Company Bank Header', 'Event Proposal', 'Tax Exemption Certificate'];
+const EXPECTED_DOC_TYPES = ['SSM', 'Company Bank Header', 'Event Proposal', 'Tax Exemption Certificate', 'Work Permit'];
 
-// Submitted-for-review card: company/e-Invoice details + documents + Accept/Reject.
-// Reject reuses the exact same inline reason box as inquiryRowHtml (rejectingId,
-// .reject-reason/.reject-confirm/.reject-cancel) — confirmReject() doesn't care
-// which status the booking is coming from.
-function submittedCardHtml(b) {
-  const quoteDetail = quoteDetailHtml(b.quote);
+function agreementStatusLabel(status) {
+  return String(status || '').split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+}
+
+// Colour rule for the leasing-agreement box in triStatusHtml(). Green also
+// covers the case where both signature timestamps are set but the automation
+// hasn't yet flipped agreements.status to 'completed'.
+function leasingAgreementTriState(b) {
+  const a = b.agreement;
+  if (!a || a.status === 'draft' || a.status === 'amended') return 'red';
+  if (a.status === 'completed' || (a.management_signed_at && a.customer_signed_at)) return 'green';
+  return 'yellow'; // pending_review, approved, awaiting_management_signature, awaiting_customer_signature
+}
+
+// Colour rule for the payment box. deposit_payments has 0 rows in production
+// today, so this reads red for every booking until real receipts land — that
+// is correct, not a bug.
+function paymentTriState(b) {
+  const paid = (b.depositPayments || [])
+    .filter(p => p.verified)
+    .reduce((sum, p) => sum + Number(p.amount || 0), 0);
+  if (paid <= 0) return 'red';
+  if (paid < b.price) return 'yellow'; // e.g. the 50% deposit, verified but not full
+  return 'green';
+}
+
+// Colour rule for the work-permit box. There is no dedicated table/column for
+// this — it's implemented as a booking_documents row with doc_type = 'Work
+// Permit', matched case-insensitively the same way submittedCardHtml's
+// docsByType lookup works.
+function workPermitTriState(b) {
+  const doc = (b.documents || []).find(d => (d.doc_type || '').toLowerCase() === 'work permit');
+  if (!doc || !doc.file_url) return 'red';
+  if (doc.status === 'approved' || doc.status === 'verified') return 'green';
+  return 'yellow'; // uploaded but still 'awaiting'/'pending'/anything not yet approved
+}
+
+const TRI_LABELS = { red: 'Not prepared', yellow: 'Pending', green: 'Complete' };
+
+function triBoxHtml(label, state, title) {
+  return `<div class="status-tri-box tri-${state}" title="${escapeHtml(title)}">
+    <span class="tri-label">${escapeHtml(label)}</span>
+    <span class="tri-value">${TRI_LABELS[state]}</span>
+  </div>`;
+}
+
+// Three-box status summary: leasing agreement, payment, work permit. Returns
+// { html, allGreen } so agreementCardHtml() can also flag the card itself
+// when a booking is fully ready.
+function triStatusHtml(b) {
+  const leasing = leasingAgreementTriState(b);
+  const payment = paymentTriState(b);
+  const workPermit = workPermitTriState(b);
+  const paid = (b.depositPayments || []).filter(p => p.verified).reduce((sum, p) => sum + Number(p.amount || 0), 0);
+  const html = `<div class="status-tri">
+    ${triBoxHtml('Leasing agreement', leasing, 'Leasing agreement status: ' + agreementStatusLabel((b.agreement && b.agreement.status) || 'not started'))}
+    ${triBoxHtml('Payment', payment, 'Verified payment: ' + fmtMoney(paid) + ' of ' + fmtMoney(b.price))}
+    ${triBoxHtml('Work permit', workPermit, 'Work permit document status')}
+  </div>`;
+  return { html, allGreen: leasing === 'green' && payment === 'green' && workPermit === 'green' };
+}
+
+// Ongoing card: one per booking with status 'submitted' or 'confirmed'.
+// Merges what used to be two separate cards (submittedCardHtml +
+// agreementCardHtml) into one, since the backend redesign (migration_14)
+// means a booking's leasing agreement now starts generating the moment it's
+// submitted, not after a staff review step — so "documents the customer
+// uploaded" and "leasing agreement status" describe the same booking at the
+// same time, not two different pipeline stages.
+//
+// Agreement row may not exist yet (Zapier hasn't written it back) — the
+// .ag-status badge/doc link/Approve/Amend section degrades to a neutral
+// "Agreement pending" tag rather than reading b.agreement.status on a null.
+// Reject reuses the exact same inline reason box as inquiryRowHtml
+// (rejectingId, .reject-reason/.reject-confirm/.reject-cancel) —
+// confirmReject() doesn't care which status the booking is coming from, and
+// trg_bookings_notify_reject_submission still fires on submitted -> rejected.
+// actionSelect(b) is the only remaining way to move a booking to 'completed'
+// (or any other status) now that the old Ongoing table is gone.
+function ongoingCardHtml(b) {
+  const a = b.agreement;
+  const canAct = a && a.status === 'pending_review';
+  const docLink = a && a.doc_url
+    ? `<a class="link-btn" href="${escapeHtml(a.doc_url)}" target="_blank" rel="noopener">View agreement ↗</a>`
+    : '';
+  const tri = triStatusHtml(b);
+  // When leasing agreement / payment / work permit are all green, show that
+  // readiness instead of the raw agreement-status badge. This is a display
+  // override only — deliberately stricter than bookings.status, which the
+  // trg_agreements_advance_on_customer_signed trigger already flips to
+  // 'confirmed' on customer signature alone, before payment/work permit are
+  // necessarily green. No write path here, same as the rest of triStatusHtml.
+  const agreementBadge = tri.allGreen
+    ? `<span class="ag-status ag-all-clear">Confirmed</span>`
+    : a
+      ? `<span class="ag-status ag-${escapeHtml(a.status)}">${escapeHtml(agreementStatusLabel(a.status))}</span>`
+      : `<span class="ag-status ag-draft">Agreement pending</span>`;
+  const agreementActions = canAct
+    ? `<button class="approve-agreement-btn accept-btn" data-agreement-id="${a.id}" data-booking-id="${b.id}">Approve</button>
+       <button class="amend-agreement-btn reject-btn" data-agreement-id="${a.id}" data-booking-id="${b.id}">Amend</button>`
+    : '';
+
   const docsByType = {};
   b.documents.forEach(d => { docsByType[(d.doc_type || '').toLowerCase()] = d; });
-
   const docsHtml = EXPECTED_DOC_TYPES
     .filter(type => type !== 'Tax Exemption Certificate' || b.tax_exempted)
     .map(type => {
@@ -1025,7 +1153,11 @@ function submittedCardHtml(b) {
       return `<div class="review-doc"><span class="review-doc-name">${escapeHtml(type)}</span>${status}</div>`;
     }).join('');
 
-  const actionCell = (rejectingId === b.id)
+  // While rejecting, the reason box replaces the whole action row (same
+  // pattern as inquiryRowHtml/the old submittedCardHtml) rather than sitting
+  // alongside Approve/Amend and the status dropdown — one focused decision
+  // at a time, and no risk of changing status mid-reject.
+  const actionsRowHtml = (rejectingId === b.id)
     ? `<div class="reject-box">
         <input class="reject-reason" data-id="${b.id}" type="text" placeholder="Reason for rejection (required)" />
         <div class="reject-actions">
@@ -1034,21 +1166,24 @@ function submittedCardHtml(b) {
         </div>
       </div>`
     : `<div class="btn-row">
-        <button class="accept-submission-btn accept-btn" data-id="${b.id}">Accept</button>
+        ${agreementActions}
         <button class="reject-btn" data-id="${b.id}">Reject</button>
+        ${actionSelect(b)}
       </div>`;
 
-  return `<div class="review-card">
+  return `<div class="review-card${tri.allGreen ? ' tri-all-green' : ''}">
+    ${tri.html}
     <div class="review-head">
       <div>
         <h3>${escapeHtml(b.company) || '—'} <span class="quote-detail">${escapeHtml(b.customer)}</span></h3>
         <span class="quote-detail">${escapeHtml(b.eventType)} · ${escapeHtml(b.hub)} / ${escapeHtml(b.space)} · ${escapeHtml(b.start_date)} → ${escapeHtml(b.end_date)}</span>
       </div>
       <div class="review-meta">
-        <span class="quote">${fmtMoney(b.quote.total)}</span><br>${quoteDetail}
+        ${agreementBadge}<br>${docLink}
       </div>
     </div>
     <div class="review-grid">
+      <div class="review-field"><span class="label">Trade / Event Name</span><span class="value">${escapeHtml(b.tradeName) || '—'}</span></div>
       <div class="review-field"><span class="label">Registration No.</span><span class="value">${escapeHtml(b.registration_no) || '—'}</span></div>
       <div class="review-field"><span class="label">TIN</span><span class="value">${escapeHtml(b.tin_number) || '—'}</span></div>
       <div class="review-field"><span class="label">SST No.</span><span class="value">${escapeHtml(b.sst_number) || '—'}</span></div>
@@ -1063,43 +1198,7 @@ function submittedCardHtml(b) {
       <p class="review-docs-title">Documents</p>
       ${docsHtml}
     </div>
-    ${actionCell}
-  </div>`;
-}
-
-function agreementStatusLabel(status) {
-  return String(status || '').split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-}
-
-// Leasing-agreement card: one per confirmed booking that has an agreements
-// row (created by Nabila's Zapier automation once a booking is confirmed —
-// not by this dashboard). Approve/Amend only apply while status is
-// 'pending_review'; every later stage (sent to management, signed, sent to
-// customer, completed) is driven by SignWell/Zapier and shown here read-only
-// via the journey timeline.
-function agreementCardHtml(b) {
-  const a = b.agreement;
-  const canAct = a.status === 'pending_review';
-  const docLink = a.doc_url
-    ? `<a class="link-btn" href="${escapeHtml(a.doc_url)}" target="_blank" rel="noopener">View agreement ↗</a>`
-    : '';
-  const actions = canAct
-    ? `<div class="btn-row">
-        <button class="approve-agreement-btn accept-btn" data-agreement-id="${a.id}" data-booking-id="${b.id}">Approve</button>
-        <button class="amend-agreement-btn reject-btn" data-agreement-id="${a.id}" data-booking-id="${b.id}">Amend</button>
-      </div>`
-    : '';
-  return `<div class="review-card">
-    <div class="review-head">
-      <div>
-        <h3>${escapeHtml(b.company) || '—'} <span class="quote-detail">${escapeHtml(b.customer)}</span></h3>
-        <span class="quote-detail">${escapeHtml(b.eventType)} · ${escapeHtml(b.hub)} / ${escapeHtml(b.space)} · ${escapeHtml(b.start_date)} → ${escapeHtml(b.end_date)}</span>
-      </div>
-      <div class="review-meta">
-        <span class="ag-status ag-${escapeHtml(a.status)}">${escapeHtml(agreementStatusLabel(a.status))}</span><br>${docLink}
-      </div>
-    </div>
-    ${actions}
+    ${actionsRowHtml}
     <button class="journey-toggle" data-booking-id="${b.id}">View journey ▾</button>
     <div class="journey-container" data-booking-id="${b.id}" hidden></div>
   </div>`;
@@ -1441,6 +1540,12 @@ function updateTabUI() {
     btn.classList.toggle('active', btn.getAttribute('data-tab') === currentTab);
   });
   updateHubToolbarForTab();
+  // #metrics/#metricsFootnote sit above the tab strip in the DOM (not inside
+  // any .tab-panel), so they'd otherwise keep showing on Revenue/Customers/KPI
+  // too — the bookings-pipeline counts only make sense on the Bookings tab.
+  const showMetrics = currentTab === 'bookings';
+  document.getElementById('metrics').style.display = showMetrics ? '' : 'none';
+  document.getElementById('metricsFootnote').style.display = showMetrics ? '' : 'none';
 }
 
 // Hub/space only apply to Bookings and Revenue — a customer can span multiple
@@ -1458,14 +1563,14 @@ function switchTab(name) {
   updateTabUI();
 }
 
-// The 4 sections that used to sit stacked in the Bookings tab, now one at a
-// time behind a sub-tab strip. 'all' has no count — it's the everything-bucket,
-// a count there would just restate filtered.length shown elsewhere.
+// The sections that used to sit stacked in the Bookings tab, now one at a
+// time behind a sub-tab strip. Agreements was merged into Ongoing (staff see
+// one "everything past Submitted" view instead of two separate tabs). 'all'
+// has no count — it's the everything-bucket, a count there would just
+// restate filtered.length shown elsewhere.
 const BOOKINGS_SUBTABS = [
   { key: 'inquiries', label: 'Incoming inquiries' },
   { key: 'pending', label: 'Pending' },
-  { key: 'submitted', label: 'Submitted' },
-  { key: 'agreements', label: 'Agreements' },
   { key: 'ongoing', label: 'Ongoing' },
   { key: 'all', label: 'All bookings' }
 ];
@@ -1474,7 +1579,7 @@ function updateBookingsSubTabUI() {
   document.querySelectorAll('#bookingsSubTabs .tab-btn').forEach(btn => {
     btn.classList.toggle('active', btn.getAttribute('data-subtab') === bookingsSubTab);
   });
-  ['Inquiries', 'Pending', 'Submitted', 'Agreements', 'Ongoing', 'All'].forEach(key => {
+  ['Inquiries', 'Pending', 'Ongoing', 'All'].forEach(key => {
     document.getElementById('subtab' + key).classList.toggle('active', bookingsSubTab === key.toLowerCase());
   });
 }
@@ -1528,17 +1633,6 @@ function renderRevenueSubTabs() {
     });
   });
   updateRevenueSubTabUI();
-}
-
-function updateOngoingCollapseUI() {
-  document.getElementById('ongoingContent').classList.toggle('collapsed', ongoingCollapsed);
-  document.getElementById('ongoingArrow').textContent = ongoingCollapsed ? '▸' : '▾';
-}
-
-function toggleOngoingCollapse() {
-  ongoingCollapsed = !ongoingCollapsed;
-  localStorage.setItem('cl_ongoing_collapsed', ongoingCollapsed ? '1' : '0');
-  updateOngoingCollapseUI();
 }
 
 // KPI tab row: one per hub, an editable target + a Save button. Pre-fills
@@ -1645,14 +1739,21 @@ function render() {
 
   const inquiries = filtered.filter(b => b.status === 'inquired');
   const pending = filtered.filter(b => b.status === 'pending');
-  const submitted = filtered.filter(b => b.status === 'submitted');
-  const ongoing = filtered.filter(b => ['confirmed', 'completed', 'cancelled', 'rejected'].includes(b.status));
-  const withAgreements = filtered.filter(b => b.agreement);
-  const agreementsNeedingReview = withAgreements.filter(b => b.agreement.status === 'pending_review').length;
 
-  renderBookingsSubTabs({ inquiries: inquiries.length, pending: pending.length, submitted: submitted.length, ongoing: ongoing.length, agreements: agreementsNeedingReview });
-  document.getElementById('ongoingToggleLabel').textContent =
-    'Ongoing bookings' + (ongoing.length ? ` (${ongoing.length})` : '');
+  // Genuinely in-flight bookings: submitted (documents in, leasing agreement
+  // auto-generating/out for signature) or confirmed (signed, awaiting the
+  // event). Completed/cancelled/rejected are terminal — that full history
+  // lives in "All bookings" instead. Soonest start_date first so this reads
+  // as a work queue, not an arbitrary list.
+  const ongoingBookings = filtered
+    .filter(b => b.status === 'submitted' || b.status === 'confirmed')
+    .sort((a, c) => (a.start_date || '').localeCompare(c.start_date || ''));
+  const agreementsNeedingReview = ongoingBookings.filter(b => b.agreement && b.agreement.status === 'pending_review').length;
+
+  // The Ongoing sub-tab's badge shows agreementsNeedingReview, not
+  // ongoingBookings.length — it matches the pattern the other badges use
+  // (Pending shows a count of items awaiting staff action, not raw volume).
+  renderBookingsSubTabs({ inquiries: inquiries.length, pending: pending.length, ongoing: agreementsNeedingReview });
   renderRevenueSubTabs();
 
   // Metrics
@@ -1666,14 +1767,13 @@ function render() {
   const revenue = perf.reduce((s, r) => s + Number(r.revenue || 0), 0);
 
   document.getElementById('metrics').innerHTML = `
-    <div class="metric-card"><p class="label">New inquiries</p><p class="value">${totalInquiries}</p></div>
-    <div class="metric-card"><p class="label">Pending review</p><p class="value">${totalPending}</p></div>
-    <div class="metric-card"><p class="label">Submitted, awaiting review</p><p class="value">${totalSubmitted}</p></div>
-    <div class="metric-card"><p class="label">Confirmed</p><p class="value">${totalConfirmed}</p></div>
-    <div class="metric-card"><p class="label">Completed</p><p class="value">${totalCompleted}</p></div>
-    <div class="metric-card"><p class="label">Rejected / Cancelled</p><p class="value">${totalRejectedCancelled}</p></div>
-    <div class="metric-card"><p class="label">Revenue</p><p class="value">${fmtMoney(revenue)}</p></div>
+    <div class="metric-card mc-inquiries"><p class="label">New inquiries</p><p class="value">${totalInquiries}</p></div>
+    <div class="metric-card mc-pending"><p class="label">Pending review</p><p class="value">${totalPending}</p></div>
+    <div class="metric-card mc-submitted"><p class="label">Submitted</p><p class="value">${totalSubmitted}</p></div>
+    <div class="metric-card mc-confirmed"><p class="label">Confirmed</p><p class="value">${totalConfirmed}</p></div>
   `;
+  document.getElementById('metricsFootnote').textContent =
+    `${totalCompleted} completed · ${totalRejectedCancelled} rejected / cancelled`;
 
   // Inquiry table
   const iTable = document.getElementById('inquiryTable');
@@ -1697,37 +1797,17 @@ function render() {
     document.getElementById('pendingBody').innerHTML = pending.map(pendingRowHtml).join('');
   }
 
-  // Submitted-for-review cards
-  const subEmpty = document.getElementById('submittedEmpty');
-  const subList = document.getElementById('submittedList');
-  if (submitted.length === 0) {
-    subList.style.display = 'none'; subEmpty.style.display = 'block';
-    subEmpty.textContent = 'No submissions awaiting review.';
-  } else {
-    subList.style.display = 'block'; subEmpty.style.display = 'none';
-    subList.innerHTML = submitted.map(submittedCardHtml).join('');
-  }
-
-  // Leasing agreements
+  // Ongoing cards — genuinely in-flight bookings only (submitted or
+  // confirmed). Completed/cancelled/rejected are terminal and only appear in
+  // All bookings now. Soonest start_date first so it reads as a work queue.
   const agEmpty = document.getElementById('agreementsEmpty');
   const agList = document.getElementById('agreementsList');
-  if (withAgreements.length === 0) {
+  if (ongoingBookings.length === 0) {
     agList.style.display = 'none'; agEmpty.style.display = 'block';
-    agEmpty.textContent = 'No leasing agreements yet.';
+    agEmpty.textContent = 'No ongoing bookings yet.';
   } else {
     agList.style.display = 'block'; agEmpty.style.display = 'none';
-    agList.innerHTML = withAgreements.map(agreementCardHtml).join('');
-  }
-
-  // Ongoing table
-  const oTable = document.getElementById('ongoingTable');
-  const oEmpty = document.getElementById('ongoingEmpty');
-  if (ongoing.length === 0) {
-    oTable.style.display = 'none'; oEmpty.style.display = 'block';
-    oEmpty.textContent = 'No ongoing bookings yet.';
-  } else {
-    oTable.style.display = 'table'; oEmpty.style.display = 'none';
-    document.getElementById('ongoingBody').innerHTML = ongoing.map(rowHtml).join('');
+    agList.innerHTML = ongoingBookings.map(ongoingCardHtml).join('');
   }
 
   // All bookings (master database view — every status, own filters)
@@ -1807,11 +1887,6 @@ function attachActionHandlers() {
   // Accept button on inquiries: inquired -> pending, then notify (best-effort).
   document.querySelectorAll('.accept-btn:not(.reject-confirm):not(.accept-submission-btn):not(.approve-agreement-btn)').forEach(btn => {
     btn.addEventListener('click', (e) => acceptInquiry(e.target.getAttribute('data-id'), e.target));
-  });
-
-  // Accept button on submitted-for-review cards: submitted -> confirmed.
-  document.querySelectorAll('.accept-submission-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => acceptSubmission(e.target.getAttribute('data-id'), e.target));
   });
 
   // Reject: open the inline reason box. Shared by inquiries and submitted-for-
@@ -1903,25 +1978,6 @@ async function acceptInquiry(bookingId, btn) {
   }
   // Zapier notification fires server-side off this same status change — see
   // migration_06 — nothing further to do here.
-  render();
-}
-
-// Accept a submitted-for-review booking: submitted -> confirmed. The leasing
-// agreement generation (Phase D) fires server-side off this same status
-// change, same pattern as acceptInquiry's Zapier notification above.
-async function acceptSubmission(bookingId, btn) {
-  const b = bookings.find(x => x.id === bookingId);
-  btn.disabled = true;
-  btn.textContent = 'Accepting…';
-  try {
-    await patchBooking(bookingId, { status: 'confirmed', reviewed_at: new Date().toISOString() });
-    if (b) b.status = 'confirmed';
-  } catch (err) {
-    alert('Could not confirm this booking: ' + err.message);
-    btn.disabled = false;
-    btn.textContent = 'Accept';
-    return;
-  }
   render();
 }
 
@@ -2022,8 +2078,6 @@ document.getElementById('customerSearch').addEventListener('input', (e) => {
   customerSearchQuery = e.target.value;
   render();
 });
-document.getElementById('ongoingToggle').addEventListener('click', toggleOngoingCollapse);
-
 // Inquiry modal: close via the × button, clicking the backdrop, or Escape.
 // (The customer modal is gone — Customers Phase 1 replaced it with the
 // inline expandable list above.)
@@ -2041,15 +2095,12 @@ document.addEventListener('keydown', (e) => {
   const savedTab = localStorage.getItem('cl_active_tab');
   const savedSubTab = localStorage.getItem('cl_bookings_subtab');
   const savedRevenueSubTab = localStorage.getItem('cl_revenue_subtab');
-  const savedOngoingCollapsed = localStorage.getItem('cl_ongoing_collapsed');
   if (savedTab === 'bookings' || savedTab === 'revenue' || savedTab === 'customers' || savedTab === 'kpi') currentTab = savedTab;
   if (BOOKINGS_SUBTABS.some(t => t.key === savedSubTab)) bookingsSubTab = savedSubTab;
   if (REVENUE_SUBTABS.some(t => t.key === savedRevenueSubTab)) revenueSubTab = savedRevenueSubTab;
-  if (savedOngoingCollapsed !== null) ongoingCollapsed = savedOngoingCollapsed === '1';
   updateTabUI();   // independent of connection state — the tab shell shows immediately
   updateBookingsSubTabUI();
   updateRevenueSubTabUI();
-  updateOngoingCollapseUI();
   loadAll();
 })();
 </script>
